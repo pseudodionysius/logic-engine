@@ -6,35 +6,13 @@ import { AlethicAssertoric, SentenceSet } from '../shared/types';
 /**
  * Fluent builder for constructing a PropositionalTheory.
  *
- * Usage (manual construction):
+ * Declare variables with variable(), register sentences with sentence(),
+ * then call build() to produce an immutable PropositionalTheory ready for
+ * consistency checking and graph output.
  *
- *   const builder = new PropositionalTheoryBuilder();
- *   const p = builder.variable('p');
- *   const q = builder.variable('q');
- *
- *   builder
- *     .sentence(
- *       { raw: 'It is raining', confidence: 1.0 },
- *       p.atom(),
- *       ['p'],
- *     )
- *     .sentence(
- *       { raw: 'If it rains, the ground is wet', confidence: 1.0 },
- *       new ComplexImpl(undefined, p.atom(), '->', q.atom()),
- *       ['p', 'q'],
- *     )
- *     .sentence(
- *       { raw: 'The ground is wet', confidence: 1.0 },
- *       q.atom(),
- *       ['q'],
- *     );
- *
- *   const theory = builder.build();
- *   theory.printProof();
- *   theory.printGraph();
- *
- * Future: fromSentenceSet() will accept SentenceSet output from NLPEngine
- * and parse each AlethicAssertoric into a WFF automatically.
+ * When PropositionalSyntaxEngine is implemented, fromSentenceSet() will
+ * accept SentenceSet output from NLPEngine and parse each AlethicAssertoric
+ * into a WFF automatically.
  */
 export class PropositionalTheoryBuilder {
 
@@ -46,6 +24,9 @@ export class PropositionalTheoryBuilder {
    * Declare a named propositional variable.
    * Calling variable() with the same name twice returns the same instance,
    * so it is safe to call at any point during construction.
+   *
+   * @param name - The logical name for the variable (e.g. 'p', 'q').
+   * @returns    The PropositionalVariable instance for that name.
    */
   variable(name: string): PropositionalVariable {
     if (!this._variables.has(name)) {
@@ -57,11 +38,13 @@ export class PropositionalTheoryBuilder {
   /**
    * Add a formalised sentence to the theory under construction.
    *
-   * @param source       The validated natural language sentence.
-   * @param formula      The WFF that formalises the sentence.
-   * @param variableNames  Names of the variables this formula depends on.
-   *                       Used for the logical relations graph.
-   * @param label        Optional display label (default: φ₁, φ₂, …).
+   * @param source        - The validated natural language sentence.
+   * @param formula       - The WFF that formalises the sentence.
+   * @param variableNames - Names of the variables this formula depends on,
+   *                        used when rendering the logical relations graph.
+   * @param label         - Optional display label; defaults to φ1, φ2, … in
+   *                        the order sentences are added.
+   * @returns this, for method chaining.
    */
   sentence(
     source: AlethicAssertoric,
@@ -81,6 +64,8 @@ export class PropositionalTheoryBuilder {
   /**
    * Finalise and return the PropositionalTheory.
    * The builder may continue to be used after calling build().
+   *
+   * @returns A new PropositionalTheory containing all sentences added so far.
    */
   build(): PropositionalTheory {
     return new PropositionalTheory(
@@ -94,7 +79,8 @@ export class PropositionalTheoryBuilder {
    * Will accept SentenceSet output from NLPEngine and parse each
    * AlethicAssertoric into a WFF using the propositional SyntaxEngine.
    *
-   * @throws Error until SyntaxEngine is implemented.
+   * @param _set - The sentence set to formalise.
+   * @throws Error until PropositionalSyntaxEngine is implemented.
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   fromSentenceSet(_set: SentenceSet): PropositionalTheory {

@@ -9,6 +9,16 @@ import { NLPResult } from './nlpTypes';
  *       lightweight grammar for declarative-mood detection.
  */
 export class NLPEngine {
+
+  /**
+   * Parse an arbitrary input string and return zero or more alethic
+   * assertoric sentence candidates found within it.
+   *
+   * @param _input - The natural language string to analyse.
+   * @returns       An NLPResult containing the original input and any
+   *                assertoric candidates identified.
+   * @throws Error  Until the engine is implemented.
+   */
   parse(_input: string): NLPResult {
     throw new Error('NLPEngine.parse is not yet implemented');
   }

@@ -14,7 +14,16 @@ export interface PropositionalFormalSentence extends FormalSentence<WFF> {
   variableNames: string[];
 }
 
-/** Pairwise logical relation between two sentences in the same theory. */
+/**
+ * The pairwise logical relation between two sentences in the same theory,
+ * determined by exhaustive evaluation over all shared variable assignments.
+ *
+ * - INCONSISTENT   — no assignment makes both sentences true simultaneously
+ * - EQUIVALENT     — both sentences have the same truth value in every assignment
+ * - ENTAILS_RIGHT  — s1 ⊨ s2: whenever s1 is true, s2 is also true
+ * - ENTAILS_LEFT   — s2 ⊨ s1: whenever s2 is true, s1 is also true
+ * - CONSISTENT     — there exists an assignment making both sentences true
+ */
 export type PairwiseRelation =
   | 'INCONSISTENT'
   | 'EQUIVALENT'
@@ -24,10 +33,23 @@ export type PairwiseRelation =
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
+/**
+ * Render a variable assignment as a human-readable string.
+ *
+ * @param v - A mapping of variable names to their assigned truth values.
+ * @returns  A string of the form `{p=T, q=F}`.
+ */
 function formatValuation(v: Record<string, boolean>): string {
   return '{' + Object.entries(v).map(([k, val]) => `${k}=${val ? 'T' : 'F'}`).join(', ') + '}';
 }
 
+/**
+ * Recursively print a proof tree node with box-drawing indentation.
+ *
+ * @param node   - The node to print.
+ * @param prefix - The accumulated indentation string for this depth level.
+ * @param isLast - Whether this node is the last child of its parent.
+ */
 function printTree(node: ProofNode, prefix: string, isLast: boolean): void {
   const connector  = isLast ? '└── ' : '├── ';
   const childPfx   = prefix + (isLast ? '    ' : '│   ');
@@ -37,6 +59,11 @@ function printTree(node: ProofNode, prefix: string, isLast: boolean): void {
   );
 }
 
+/**
+ * Print the root of a proof tree, then recursively print all children.
+ *
+ * @param node - The root ProofNode to print.
+ */
 function printTreeRoot(node: ProofNode): void {
   console.log(node.label);
   node.children.forEach((child, i) =>
@@ -57,7 +84,10 @@ function printTreeRoot(node: ProofNode): void {
  */
 export class PropositionalTheory implements Theory<WFF> {
 
+  /** The formalised sentences constituting this theory. */
   readonly sentences: PropositionalFormalSentence[];
+
+  /** The named propositional variables shared across sentences, keyed by name. */
   private readonly variables: Map<string, PropositionalVariable>;
 
   constructor(

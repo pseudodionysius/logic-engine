@@ -36,5 +36,6 @@ export interface AlethicAssertoric {
  * Passed as a unit to a formal language engine for formalisation.
  */
 export interface SentenceSet {
+  /** The ordered list of validated assertoric sentences. */
   sentences: AlethicAssertoric[];
 }

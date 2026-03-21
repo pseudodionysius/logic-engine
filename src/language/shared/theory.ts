@@ -17,7 +17,9 @@ export interface FormalSentence<F extends Formula> {
  * A node in a structured proof tree.
  */
 export interface ProofNode {
+  /** Human-readable text describing this node (verdict, sub-claim, or sentence row). */
   label: string;
+  /** Ordered child nodes that justify or elaborate on this node's label. */
   children: ProofNode[];
 }
 
@@ -31,6 +33,7 @@ export interface ProofNode {
  * possible assignment, which sentence first failed — proving exhaustion.
  */
 export interface ConsistencyResult {
+  /** True when a satisfying variable assignment exists; false otherwise. */
   isConsistent: boolean;
   /** A satisfying variable assignment if the theory is consistent. */
   witness?: Record<string, boolean>;
