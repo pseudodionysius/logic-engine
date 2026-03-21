@@ -1,4 +1,4 @@
-import { Atom, Complex, WFF } from './firstOrderTypes';
+import { Atom, Complex, WFF } from './propositionalTypes';
 
 const binaryOperatorToLogic = {
   '&': (a: boolean, b: boolean) => a && b,

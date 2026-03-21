@@ -1,7 +1,7 @@
-import { BinaryOperator } from '../../../src/language/first-order/firstOrderTypes';
-import { binaryOperatorToLogic } from '../../../src/language/first-order/firstOrderUtils';
+import { BinaryOperator } from '../../../src/language/propositional/propositionalTypes';
+import { binaryOperatorToLogic } from '../../../src/language/propositional/propositionalUtils';
 
-describe('First Order Utils Tests', () => {
+describe('Propositional Utils Tests', () => {
  
   describe('Binary Operator to Logic', () => {
 

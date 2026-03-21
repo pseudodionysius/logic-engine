@@ -2,25 +2,25 @@
   "compilerOptions": {
     "target": "es6",
     "module": "commonjs",
-    "outDir": "dist",
-    "rootDir": "src",
     "strict": true,
-    "declaration": true,
     "esModuleInterop": true,
+    "types": ["jest"],
     "baseUrl": ".",
     "paths": {
-      "@src/*": ["src/*"], 
+      "@src/*": ["src/*"],
       "@test/*": ["test/*"],
       "@language/*": ["src/language/*"],
-      "@firstOrder/*": ["src/language/firstOrder/*"],
+      "@propositional/*": ["src/language/propositional/*"],
+      "@quantificational/*": ["src/language/quantificational/*"],
       "@engine/*": ["src/engine/*"],
+      "@nlp/*": ["src/engine/nlp/*"]
     }
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "test/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "**/*.spec.ts"
+    "node_modules"
   ]
 }

@@ -1,5 +1,5 @@
-import { WFF,  Complex, BinaryOperator } from './firstOrderTypes';
-import { binaryOperatorToLogic } from './firstOrderUtils';
+import { WFF, Complex, BinaryOperator } from './propositionalTypes';
+import { binaryOperatorToLogic } from './propositionalUtils';
 
 export class ComplexImpl implements Complex {
 

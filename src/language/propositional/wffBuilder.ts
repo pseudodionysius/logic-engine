@@ -1,7 +1,7 @@
-import { WFF, Atom, Complex } from './firstOrderTypes';
+import { WFF } from './propositionalTypes';
 import { ComplexImpl } from './complex';
 import { AtomImpl } from './atom';
-import { isAtom, isComplex } from './firstOrderUtils';
+import { isAtom, isComplex } from './propositionalUtils';
 
 export class WFFBuilder {
   

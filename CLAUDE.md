@@ -7,8 +7,8 @@ A TypeScript npm library (`logic-engine`) providing types and runtime evaluation
 ## Commands
 
 ```bash
-npm test          # Run all Jest tests
-npm run build     # Compile TypeScript → dist/
+npm test          # Run all Jest tests (via tsconfig.test.json)
+npm run build     # Compile TypeScript → dist/ (via tsconfig.build.json)
 ```
 
 Tests use `ts-jest` directly against source — no build step required before running tests.
@@ -42,75 +42,114 @@ Add it at: `https://github.com/NathOrmond/logic-engine/settings/secrets/actions`
 
 ## Architecture
 
+Tests mirror source structure exactly: every `src/a/b/c.ts` has a corresponding `test/a/b/c.spec.ts`.
+
 ```text
 src/
-  index.ts                         # Re-exports everything
+  index.ts                                        # Re-exports language + engine
   language/
-    first-order/
-      firstOrderTypes.d.ts         # Core type definitions (WFF, Atom, Complex, operators)
-      atom.ts                      # AtomImpl class
-      complex.ts                   # ComplexImpl class
-      wffBuilder.ts                # WFFBuilder factory
-      firstOrderUtils.ts           # binaryOperatorToLogic map, isAtom/isComplex guards
-      wff.ts                       # Incomplete stub (commented out)
+    shared/
+      types.ts                                    # Base Formula interface (root contract)
+    propositional/                                # Propositional (classical) logic
+      propositionalTypes.d.ts                     # WFF, Atom, Complex, operators
+      atom.ts                                     # AtomImpl
+      complex.ts                                  # ComplexImpl
+      wffBuilder.ts                               # WFFBuilder factory
+      propositionalUtils.ts                       # binaryOperatorToLogic, isAtom, isComplex
       index.ts
+    quantificational/
+      index.ts                                    # TODO
+    modal/
+      index.ts                                    # TODO
   engine/
-    syntax/syntaxEngine.ts         # TODO
-    semantics/evaluationEngine.ts  # TODO
+    nlp/
+      nlpTypes.ts                                 # AlethicAssertoric, NLPResult
+      nlpEngine.ts                                # NLPEngine (TODO)
+      index.ts
+    syntax/
+      propositional/syntaxEngine.ts               # TODO
+    semantics/
+      propositional/evaluationEngine.ts           # TODO
 
 test/
-  language/first-order/
-    atom.spec.ts
-    complex.spec.ts
-    firstOrderUtils.spec.ts
-    meta-logic/
-      completeness.spec.ts         # Skipped placeholder
-      expressiveAdequacy.spec.ts   # Skipped placeholder
+  language/
+    propositional/
+      atom.spec.ts
+      complex.spec.ts
+      propositionalUtils.spec.ts
+      meta-logic/
+        completeness.spec.ts                      # Skipped placeholder
+        expressiveAdequacy.spec.ts                # Skipped placeholder
+  engine/
+    nlp/nlpEngine.spec.ts                         # Skipped placeholder
+    syntax/propositional/syntaxEngine.spec.ts     # Skipped placeholder
+    semantics/propositional/evaluationEngine.spec.ts  # Skipped placeholder
 ```
+
+### TypeScript Config Split
+
+| File | Purpose |
+| --- | --- |
+| `tsconfig.json` | IDE base — includes `src/` + `test/`, no emit |
+| `tsconfig.build.json` | Build only — `src/` → `dist/`, emits declarations |
+| `tsconfig.test.json` | Jest — extends base, `noEmit: true` |
 
 ### Path Aliases (tsconfig)
 
 | Alias | Resolves to |
 | --- | --- |
 | `@src/*` | `src/*` |
+| `@test/*` | `test/*` |
 | `@language/*` | `src/language/*` |
-| `@firstOrder/*` | `src/language/firstOrder/*` |
+| `@propositional/*` | `src/language/propositional/*` |
+| `@quantificational/*` | `src/language/quantificational/*` |
 | `@engine/*` | `src/engine/*` |
+| `@nlp/*` | `src/engine/nlp/*` |
 
-## Core Type System (`firstOrderTypes.d.ts`)
+## Core Type System
+
+### Shared (`src/language/shared/types.ts`)
+
+```ts
+interface Formula {
+  value: () => boolean;
+}
+```
+
+Every formula type in every language must satisfy `Formula`. This is the root evaluation contract.
+
+### Propositional (`propositionalTypes.d.ts`)
 
 ```ts
 type UnaryOperator = '~';
 type BinaryOperator = '&' | '|' | '->' | '<->';
 
-interface Atom {
+interface Atom extends Formula {
   unaryOperator: UnaryOperator | undefined;
   proposition?: boolean | (() => boolean);
-  value: () => boolean;
 }
 
-interface Complex {
+interface Complex extends Formula {
   unaryOperator: UnaryOperator | undefined;
   left?: WFF;
   binaryOperator?: BinaryOperator;
   right?: WFF;
-  value: () => boolean;
 }
 
-type WFF = Atom | Complex;
+type WFF = Atom & Complex; // structural union via interface extension
 ```
 
-## First-Order Logic — What's Implemented
+## Propositional Logic — What's Implemented
 
-### `AtomImpl` (`atom.ts`)
+### `AtomImpl`
 
-Smallest truth-evaluable unit. Accepts a boolean literal or a `() => boolean` thunk as its proposition. Unary `'~'` negates the result.
+Smallest truth-evaluable unit. Accepts a boolean literal or a `() => boolean` thunk. Unary `'~'` negates the result.
 
-### `ComplexImpl` (`complex.ts`)
+### `ComplexImpl`
 
-Combines two `WFF`s with a binary operator. Truth evaluation delegates to `binaryOperatorToLogic`, then applies optional `'~'` negation to the whole.
+Combines two `WFF`s with a binary operator. Delegates to `binaryOperatorToLogic`, then applies optional `'~'` to the whole.
 
-### `binaryOperatorToLogic` (`firstOrderUtils.ts`)
+### `binaryOperatorToLogic`
 
 | Operator | Semantics |
 | --- | --- |
@@ -119,25 +158,31 @@ Combines two `WFF`s with a binary operator. Truth evaluation delegates to `binar
 | `'->'` | `(a, b) => !a \|\| b` (material implication) |
 | `'<->'` | `(a, b) => a === b` (biconditional) |
 
-### `WFFBuilder` (`wffBuilder.ts`)
+### `WFFBuilder`
 
-Factory: inspects input shape and returns the correct `AtomImpl` or `ComplexImpl`. Returns `{}` for unrecognised shapes.
+Factory: inspects input shape and returns `AtomImpl` or `ComplexImpl`. Returns `{}` for unrecognised shapes.
 
 ### Type guards
 
 - `isAtom(wff)` — checks for `proposition` property
 - `isComplex(wff)` — checks for `left` or `binaryOperator` property
 
+## NLP Engine — Design Intent
+
+`NLPEngine.parse(input: string): NLPResult` accepts any string and returns zero or more `AlethicAssertoric` candidates — declarative sentences that make a truth claim and are valid inputs for a formal language engine. Non-declarative input (questions, commands, exclamations) should yield no candidates.
+
 ## What Is Not Yet Implemented
 
-- `SyntaxEngine` — parsing strings/JSON into WFF instances
-- `EvaluationEngine` — semantic evaluation beyond `.value()`
-- Completeness and expressive adequacy proofs (tests are skipped stubs)
-- Quantificational logic, Modal logic, Paraconsistent logic (roadmap only)
+- `NLPEngine` — sentence segmentation, mood classification, confidence scoring
+- `SyntaxEngine` (propositional) — parsing strings/JSON into WFF instances
+- `EvaluationEngine` (propositional) — truth tables, tautology/contradiction checking
+- `Quantificational` language module
+- `Modal` language module
+- Completeness and expressive adequacy proofs (skipped test stubs)
 
 ## Conventions
 
-- Every logical construct exposes a `value(): boolean` method — this is the evaluation contract for all WFF types.
-- The library is purely functional at the type level; no mutable state in implementations.
+- Every logical construct exposes `value(): boolean` — the evaluation contract for all `Formula` types.
 - Tests exhaustively cover every row of each operator's truth table.
-- New language implementations should follow the `first-order/` pattern: types file, class implementations, utils, builder, index re-export, and a corresponding `test/language/<name>/` directory.
+- New language modules follow the `propositional/` pattern: `<name>Types.d.ts`, class implementations, utils, builder, `index.ts`, and a matching `test/language/<name>/` directory.
+- Skipped tests (`test.skip`) mark planned work — they should describe the intended behaviour before implementation begins.

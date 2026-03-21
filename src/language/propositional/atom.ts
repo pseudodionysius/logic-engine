@@ -1,4 +1,4 @@
-import { Atom, UnaryOperator }  from './firstOrderTypes';
+import { Atom, UnaryOperator } from './propositionalTypes';
 
 export class AtomImpl implements Atom {
   

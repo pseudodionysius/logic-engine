@@ -1,5 +1,5 @@
-import { AtomImpl } from '../../../src/language/first-order/atom';
-import { ComplexImpl } from '../../../src/language/first-order/complex';
+import { AtomImpl } from '../../../src/language/propositional/atom';
+import { ComplexImpl } from '../../../src/language/propositional/complex';
 
 describe('Complex Tests', () => {
   

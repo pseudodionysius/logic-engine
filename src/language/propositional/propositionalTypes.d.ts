@@ -1,6 +1,7 @@
+import { Formula } from '../shared/types';
 
 /**
- * Unary Logical operators function on a single 
+ * Unary Logical operators function on a single
  * truth evaluable statement (WFF - Well Formed Formula)
  * 
  * ~ := NOT
@@ -20,13 +21,13 @@ type BinaryOperator = '&' | '|' | '->' | '<->';
 
 interface WFF extends Atom, Complex {} 
 
-interface Atom {
+interface Atom extends Formula {
   unaryOperator: UnaryOperator | undefined;
   proposition?: boolean | (() => boolean);
   value: () => boolean;
 }
 
-interface Complex { 
+interface Complex extends Formula {
   unaryOperator: UnaryOperator | undefined;
   left?: WFF;
   binaryOperator?: BinaryOperator;

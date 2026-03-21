@@ -1,122 +1,131 @@
-# Logic Engine 
+# Logic Engine
 
-This library provides a logic engine for typescript projects which require 
-clear types and processing for complicated logics. This library can also be used 
-to learn logic and explore its applications and limits. 
+A TypeScript library providing types and runtime evaluation for formal logical languages. Use it to build proof systems, formalise natural language processing pipelines, or explore the theory and limits of formal logic.
 
+## Install
 
-
-## How to use
-
-This library is written to provide support for logical languages for uses such as performing proofs or formalising natural language processing. 
-
-Each formal language makes assumptions and has limitations, over time the goal is to support most of the main formal logical languages. 
-
-In order to use the logic engine first install the package 
-
-```
+```bash
 npm install logic-engine
 ```
 
-After this, the types and methods of the library will be available for use.
+## How it works
 
-Below are a list of supported languages with details of how to use them. 
+The engine has two layers:
 
-# Languages
+1. **Language modules** — define the syntax and semantics of a formal language (propositional, quantificational, modal, …). Each language exposes well-formed formula types and a `value(): boolean` evaluation contract.
+2. **Engine modules** — process input. The NLP engine identifies assertoric sentence candidates in natural language; syntax and evaluation engines then formalise and reason about them.
 
-## First Order
-First Order is the language of "classical propositional" logic. The main features of first-order are the following: 
+All formal language formula types implement the shared `Formula` interface:
 
-### `WFF`
-- Every sentence of First Order is a Well Formed Formula (`WFF`). 
-- WFF's can be either `Atom` or `Complex` types. 
+```ts
+interface Formula {
+  value: () => boolean;
+}
+```
 
-### `Atom` 
-- An `Atom` is the smallest unit of truth-evaluable proposition in First Order :
+## Languages
 
-        interface Atom {
-          unaryOperator: UnaryOperator | undefined;
-          proposition?: boolean | (() => boolean);
-          value: () => boolean;
-        } 
-- The only valid unaryOperator in First Order is `'~'` for negation. 
-- Every proposition is a truth-evaluable statement. As such, this can either be a boolean primitive or an expression which returns a boolean. 
-- The value of an atom is a combination of the proposition with the application of the unary operator of negation (if it exists). 
+### Propositional Logic
 
-### `Complex` 
-- A `Complex` is similar to an Atom, however, it differs insofar as a Complex is a combination of WFF's, joined by a binaryOperator 
+Classical propositional (sentential) logic. The foundational language of the engine.
 
-        interface Complex { 
-          unaryOperator: UnaryOperator | undefined;
-          left?: WFF;
-          binaryOperator?: BinaryOperator;
-          right?: WFF;
-          value: () => boolean;
-        }
-- With a Complex, the left and right WFF's will evaluate to either true or false, these will be combined with a logical operator that will make the statement of the Complex evaluate to true or false (depending on the binary operator). The unaryOperator of negation can still be applied to the whole complex too
+#### `WFF` — Well Formed Formula
 
-### Binary Operators
+Every sentence is a `WFF`, which is either an `Atom` or a `Complex`.
 
-- Binary Operators combine multiple truth evaluable statement of WFF's into Complexes. For example the "then" in"If it is raining then the floor is when" or the "and" in "2+2=4 and today is Monday" 
-- Binary operators combine a left and a right WFF. In the truth table models that follow I shall refer to the left WFF as 'P' and the right WFF as 'Q'.
+#### `Atom`
 
-#### AND 
-- The Syntax for logical AND is '&' 
-- Logical '&' has the following truth table 
+The smallest truth-evaluable unit:
 
-    | P     | Q     | P & Q |
-    |-------|-------|---------|
-    | True  | True  | True    |
-    | True  | False | False   |
-    | False | True  | False   |
-    | False | False | False   |
+```ts
+interface Atom extends Formula {
+  unaryOperator: '~' | undefined;
+  proposition?: boolean | (() => boolean);
+  value: () => boolean;
+}
+```
 
-#### OR 
-- The Syntax for logical inclusive OR is '|' 
-- Logical '|' has the following truth table 
+`proposition` can be a boolean literal or a `() => boolean` expression. The only unary operator is `'~'` (negation).
 
-    | P     | Q     | P \| Q |
-    |-------|-------|--------|
-    | True  | True  | True   |
-    | True  | False | True   |
-    | False | True  | True   |
-    | False | False | False  |
+```ts
+const t = new AtomImpl(undefined, true);          // value() → true
+const f = new AtomImpl('~', true);                // value() → false  (negated)
+const e = new AtomImpl(undefined, () => 2 + 2 === 4); // value() → true
+```
 
-#### MATERIAL IMPLICATION 
-- The Syntax for logical Material Implication is '->' 
-- Logical '->' has the following truth table 
+#### `Complex`
 
-    | P     | Q     | P -> Q |
-    |-------|-------|--------|
-    | True  | True  | True   |
-    | True  | False | False  |
-    | False | True  | True   |
-    | False | False | True   |
+A composite formula joining two `WFF`s with a binary operator:
 
-#### BICONDITIONAL 
-- The Syntax for logical Biconditional is '<->' 
-- Logical '<->' has the following truth table 
+```ts
+interface Complex extends Formula {
+  unaryOperator: '~' | undefined;
+  left?: WFF;
+  binaryOperator?: '&' | '|' | '->' | '<->';
+  right?: WFF;
+  value: () => boolean;
+}
+```
 
-  | P     | Q     | P <-> Q |
-  |-------|-------|---------|
-  | True  | True  | True    |
-  | True  | False | False   |
-  | False | True  | False   |
-  | False | False | True    |
+```ts
+const p = new AtomImpl(undefined, true);
+const q = new AtomImpl(undefined, false);
 
-### Syntax Engine 
-- The `SyntaxEngine` is for processing strings, json and other types of information into the language of First Order and checking for correct syntax. 
+const pAndQ = new ComplexImpl(undefined, p, '&', q); // value() → false
+const pOrQ  = new ComplexImpl(undefined, p, '|', q); // value() → true
+```
+
+#### Binary Operators
+
+| Operator | Name | `(T, F)` | `(F, T)` | `(F, F)` |
+| --- | --- | --- | --- | --- |
+| `&` | AND | F | F | F |
+| `\|` | OR | T | T | F |
+| `->` | Material Implication | F | T | T |
+| `<->` | Biconditional | F | F | T |
+
+#### `WFFBuilder`
+
+Factory that constructs the correct type from an input object:
+
+```ts
+const builder = new WFFBuilder();
+const wff = builder.getWFF({ unaryOperator: undefined, proposition: true });
+```
+
+### Quantificational Logic
+
 > In Progress
 
-### Evalutation Engine 
-- The `EvaluationEngine` is for evaluating claims made within First Order. 
+Extends propositional logic with universal (`∀`) and existential (`∃`) quantifiers, predicate symbols, and individual variables.
+
+### Modal Logic
+
 > In Progress
 
-## Quantifiational 
+Extends propositional logic with operators for necessity (`□`) and possibility (`◇`), evaluated over possible-worlds semantics.
+
+## NLP Engine
+
 > In Progress
 
-## Modal Logics
-> In Progress 
+`NLPEngine.parse(input)` accepts any string and returns `AlethicAssertoric` candidates — declarative sentences that make a truth claim and can be passed to a formal language engine. Non-declarative input (questions, commands, exclamations) yields no candidates.
 
-## Paraconsistent Logics 
+```ts
+interface AlethicAssertoric {
+  raw: string;        // extracted sentence
+  confidence: number; // 0–1 confidence it is assertoric
+}
+```
+
+## Syntax Engine
+
 > In Progress
+
+Parses formula strings and JSON into typed `WFF` instances, validating syntactic correctness against the propositional grammar.
+
+## Evaluation Engine
+
+> In Progress
+
+Semantic evaluation of propositional formulae: truth table generation, tautology / contradiction / contingency classification, and proof support.

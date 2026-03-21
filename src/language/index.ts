@@ -1,1 +1,2 @@
-export * from 'src/language/first-order/index';
+export * from './shared/types';
+export * from './propositional/index';

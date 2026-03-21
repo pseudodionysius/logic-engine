@@ -1,4 +1,4 @@
-import { AtomImpl } from '../../../src/language/first-order/atom';
+import { AtomImpl } from '../../../src/language/propositional/atom';
 
 describe('Atom Tests', () => {
 
