@@ -1,0 +1,64 @@
+name: Publish to NPM
+
+'on':
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semver bump type"
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  publish:
+    name: Test → Build → Bump → Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push version-bump commit + tag
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Use a PAT or the default GITHUB_TOKEN with write permission
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Gate: all tests must pass before we touch the version or registry
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Bumps version in package.json, commits, and creates a git tag (e.g. v1.0.2)
+      # [skip ci] prevents any push-triggered workflows from re-running on this commit
+      - name: Bump version
+        run: |
+          npm version ${{ inputs.bump }} -m "chore: bump version to %s [skip ci]"
+
+      # Push the version-bump commit AND the new tag in one step
+      - name: Push version commit and tag
+        run: git push --follow-tags
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
