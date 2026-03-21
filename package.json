@@ -1,6 +1,6 @@
 {
   "name": "logic-engine",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "A logic engine in js / ts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
