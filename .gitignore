@@ -19,9 +19,6 @@ logs/
 *.log
 debug.log
 
-# Dependency lock files
-package-lock.json
-yarn.lock
 
 # Environment variables
 .env
