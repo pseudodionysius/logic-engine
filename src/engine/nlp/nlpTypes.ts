@@ -1,23 +1,10 @@
-/**
- * Types for the Natural Language Processing engine.
- *
- * The NLP engine is responsible for parsing arbitrary input strings and
- * identifying candidates that are alethic assertoric sentences — declarative
- * statements that make a truth claim and can be passed on to a formal
- * language parsing engine (propositional, quantificational, etc.).
- *
- * An alethic assertoric sentence:
- *   - Makes a claim about what is (necessarily/possibly) true
- *   - Is declarative in mood (not a question, command, or exclamation)
- *   - Has a determinate truth value (or truth condition)
- */
+import { AlethicAssertoric } from '../../language/shared/types';
 
-export interface AlethicAssertoric {
-  /** The raw sentence string extracted from the input. */
-  raw: string;
-  /** Confidence score (0–1) that this sentence is a valid assertoric candidate. */
-  confidence: number;
-}
+/**
+ * Re-export AlethicAssertoric so callers can import it from the NLP module
+ * without needing to know where the canonical definition lives.
+ */
+export { AlethicAssertoric };
 
 export interface NLPResult {
   /** The original input string. */

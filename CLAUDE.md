@@ -13,32 +13,23 @@ npm run build     # Compile TypeScript → dist/ (via tsconfig.build.json)
 
 Tests use `ts-jest` directly against source — no build step required before running tests.
 
-## CI/CD — Publishing to npm
+## CI/CD
 
-Publishing is **manual only** via GitHub Actions `workflow_dispatch`. It never triggers automatically on push.
+### Test pipeline: `.github/workflows/test.yml`
 
-### Workflow: `.github/workflows/publish.yml`
+Runs automatically on every push and PR to `master`. Executes `npm ci` then `npm test`. Must pass before merging.
 
-Trigger: **Actions → "Publish to NPM" → Run workflow** in the GitHub UI.
+### Publish pipeline: `.github/workflows/publish.yml`
 
-Input: choose `patch`, `minor`, or `major` (follows semver).
+**Manual only** via `workflow_dispatch`. Never triggers on push.
 
-Pipeline order — each step must succeed before the next runs:
+Trigger: **Actions → "Publish to NPM" → Run workflow** — choose `patch`, `minor`, or `major`.
 
-1. `npm ci` — install deps
-2. `npm test` — all tests must pass (hard gate before any version change)
-3. `npm run build` — compile TypeScript
-4. `npm version <bump>` — bumps `package.json`, commits `chore: bump version to vX.Y.Z [skip ci]`, creates git tag
-5. `git push --follow-tags` — pushes commit + tag to `master`
-6. `npm publish` — publishes `dist/` to the npm registry
-
-### Required GitHub Secret
+Pipeline: `npm ci` → `npm test` → `npm run build` → `npm version <bump>` → `git push --follow-tags` → `npm publish`
 
 | Secret | Where to get it |
 | --- | --- |
-| `NPM_TOKEN` | npmjs.com → Profile → Access Tokens → Generate New Token (Automation type) |
-
-Add it at: `https://github.com/NathOrmond/logic-engine/settings/secrets/actions`
+| `NPM_TOKEN` | npmjs.com → Profile → Access Tokens → Automation type |
 
 ## Architecture
 
@@ -46,30 +37,35 @@ Tests mirror source structure exactly: every `src/a/b/c.ts` has a corresponding 
 
 ```text
 src/
-  index.ts                                        # Re-exports language + engine
+  index.ts                                           # Re-exports language + engine
   language/
     shared/
-      types.ts                                    # Base Formula interface (root contract)
-    propositional/                                # Propositional (classical) logic
-      propositionalTypes.d.ts                     # WFF, Atom, Complex, operators
-      atom.ts                                     # AtomImpl
-      complex.ts                                  # ComplexImpl
-      wffBuilder.ts                               # WFFBuilder factory
-      propositionalUtils.ts                       # binaryOperatorToLogic, isAtom, isComplex
+      types.ts                                       # Formula, AlethicAssertoric, SentenceSet
+      theory.ts                                      # FormalSentence<F>, ConsistencyResult,
+                                                     # ProofNode, Theory<F> interface
+    propositional/
+      propositionalTypes.d.ts                        # WFF, Atom, Complex, operators
+      atom.ts                                        # AtomImpl
+      complex.ts                                     # ComplexImpl
+      wffBuilder.ts                                  # WFFBuilder factory
+      propositionalUtils.ts                          # binaryOperatorToLogic, isAtom, isComplex
+      propositionalVariable.ts                       # PropositionalVariable (named, mutable var)
+      propositionalTheory.ts                         # PropositionalTheory, PropositionalFormalSentence
+      propositionalTheoryBuilder.ts                  # PropositionalTheoryBuilder (fluent builder)
       index.ts
     quantificational/
-      index.ts                                    # TODO
+      index.ts                                       # TODO
     modal/
-      index.ts                                    # TODO
+      index.ts                                       # TODO
   engine/
     nlp/
-      nlpTypes.ts                                 # AlethicAssertoric, NLPResult
-      nlpEngine.ts                                # NLPEngine (TODO)
+      nlpTypes.ts                                    # NLPResult (imports AlethicAssertoric from shared)
+      nlpEngine.ts                                   # NLPEngine stub
       index.ts
     syntax/
-      propositional/syntaxEngine.ts               # TODO
+      propositional/syntaxEngine.ts                  # TODO
     semantics/
-      propositional/evaluationEngine.ts           # TODO
+      propositional/evaluationEngine.ts              # TODO
 
 test/
   language/
@@ -77,20 +73,22 @@ test/
       atom.spec.ts
       complex.spec.ts
       propositionalUtils.spec.ts
+      propositionalVariable.spec.ts
+      propositionalTheory.spec.ts
       meta-logic/
-        completeness.spec.ts                      # Skipped placeholder
-        expressiveAdequacy.spec.ts                # Skipped placeholder
+        completeness.spec.ts                         # Full proof (135 tests total)
+        expressiveAdequacy.spec.ts                   # Full inductive proof
   engine/
-    nlp/nlpEngine.spec.ts                         # Skipped placeholder
-    syntax/propositional/syntaxEngine.spec.ts     # Skipped placeholder
-    semantics/propositional/evaluationEngine.spec.ts  # Skipped placeholder
+    nlp/nlpEngine.spec.ts                            # Skipped placeholder
+    syntax/propositional/syntaxEngine.spec.ts        # Skipped placeholder
+    semantics/propositional/evaluationEngine.spec.ts # Skipped placeholder
 ```
 
 ### TypeScript Config Split
 
 | File | Purpose |
 | --- | --- |
-| `tsconfig.json` | IDE base — includes `src/` + `test/`, no emit |
+| `tsconfig.json` | IDE base — includes `src/` + `test/`, target es2017, no emit |
 | `tsconfig.build.json` | Build only — `src/` → `dist/`, emits declarations |
 | `tsconfig.test.json` | Jest — extends base, `noEmit: true` |
 
@@ -106,83 +104,88 @@ test/
 | `@engine/*` | `src/engine/*` |
 | `@nlp/*` | `src/engine/nlp/*` |
 
-## Core Type System
+## Shared Types
 
-### Shared (`src/language/shared/types.ts`)
+### `src/language/shared/types.ts`
 
-```ts
-interface Formula {
-  value: () => boolean;
-}
-```
+| Type | Role |
+| --- | --- |
+| `Formula` | Root evaluation contract — `value(): boolean` |
+| `AlethicAssertoric` | Universal input type: `{ raw: string; confidence: number }` |
+| `SentenceSet` | Ordered collection of `AlethicAssertoric` sentences |
 
-Every formula type in every language must satisfy `Formula`. This is the root evaluation contract.
+`AlethicAssertoric` is the single source of truth for the sentence type used by both the NLP engine (as output) and all formal language engines (as input). `nlpTypes.ts` re-exports it from here.
 
-### Propositional (`propositionalTypes.d.ts`)
+### `src/language/shared/theory.ts`
 
-```ts
-type UnaryOperator = '~';
-type BinaryOperator = '&' | '|' | '->' | '<->';
-
-interface Atom extends Formula {
-  unaryOperator: UnaryOperator | undefined;
-  proposition?: boolean | (() => boolean);
-}
-
-interface Complex extends Formula {
-  unaryOperator: UnaryOperator | undefined;
-  left?: WFF;
-  binaryOperator?: BinaryOperator;
-  right?: WFF;
-}
-
-type WFF = Atom & Complex; // structural union via interface extension
-```
+| Type | Role |
+| --- | --- |
+| `FormalSentence<F>` | Pairs `AlethicAssertoric` source with a typed formula `F` and a label |
+| `ConsistencyResult` | Outcome of a consistency check: witness or failed valuations |
+| `ProofNode` | Node in a structured proof tree |
+| `Theory<F>` | Interface all formal theories must implement |
 
 ## Propositional Logic — What's Implemented
 
-### `AtomImpl`
+### WFF primitives
 
-Smallest truth-evaluable unit. Accepts a boolean literal or a `() => boolean` thunk. Unary `'~'` negates the result.
+- `AtomImpl` — boolean literal or `() => boolean` thunk; optional `'~'` negation
+- `ComplexImpl` — two WFFs joined by a binary operator; optional outer `'~'`
+- `WFFBuilder` — factory: inspects input shape, returns `AtomImpl` or `ComplexImpl`
+- `binaryOperatorToLogic` — maps `'&' | '|' | '->' | '<->'` to their truth-functional semantics
+- `isAtom` / `isComplex` — structural type guards
 
-### `ComplexImpl`
+### Theory data structure
 
-Combines two `WFF`s with a binary operator. Delegates to `binaryOperatorToLogic`, then applies optional `'~'` to the whole.
+**`PropositionalVariable`** — named variable with a mutable value. All `AtomImpl` instances created via `.atom()` share the same underlying value via closure, so assigning the variable updates every derived atom simultaneously.
 
-### `binaryOperatorToLogic`
+**`PropositionalTheory`** — built from a set of `PropositionalFormalSentence` records (each pairing an `AlethicAssertoric` with a `WFF` and variable membership list). Implements `Theory<WFF>`:
 
-| Operator | Semantics |
-| --- | --- |
-| `'&'` | `(a, b) => a && b` |
-| `'\|'` | `(a, b) => a \|\| b` |
-| `'->'` | `(a, b) => !a \|\| b` (material implication) |
-| `'<->'` | `(a, b) => a === b` (biconditional) |
+- `checkConsistency()` — exhaustive 2^n truth-table evaluation; returns `ConsistencyResult` with a satisfying witness or an exhaustion record
+- `buildProofTree()` — structured `ProofNode` tree of the consistency result
+- `printProof()` — prints the proof tree to the console with box-drawing characters
+- `printGraph()` — prints pairwise logical relations (consistent / entails / equivalent / inconsistent) and shared-variable edges
 
-### `WFFBuilder`
+**`PropositionalTheoryBuilder`** — fluent builder:
 
-Factory: inspects input shape and returns `AtomImpl` or `ComplexImpl`. Returns `{}` for unrecognised shapes.
+```ts
+const builder = new PropositionalTheoryBuilder();
+const p = builder.variable('p');
+const q = builder.variable('q');
+builder
+  .sentence({ raw: 'It is raining', confidence: 1.0 }, p.atom(), ['p'])
+  .sentence({ raw: 'If raining, wet', confidence: 1.0 },
+            new ComplexImpl(undefined, p.atom(), '->', q.atom()), ['p', 'q'])
+  .sentence({ raw: 'It is wet', confidence: 1.0 }, q.atom(), ['q']);
+const theory = builder.build();
+theory.printProof();
+theory.printGraph();
+```
 
-### Type guards
+`fromSentenceSet(SentenceSet)` is a typed stub — will be wired to `PropositionalSyntaxEngine` when implemented.
 
-- `isAtom(wff)` — checks for `proposition` property
-- `isComplex(wff)` — checks for `left` or `binaryOperator` property
+### Meta-logic proofs
+
+- **Expressive adequacy** — inductive proof: base case covers all 4 unary truth functions; Shannon expansion is the inductive step; all 16 binary truth functions verified via DNF
+- **Completeness** — structural induction proof: `value()` is semantically correct at every level; known tautologies, contradictions, and contingencies classified correctly
 
 ## NLP Engine — Design Intent
 
-`NLPEngine.parse(input: string): NLPResult` accepts any string and returns zero or more `AlethicAssertoric` candidates — declarative sentences that make a truth claim and are valid inputs for a formal language engine. Non-declarative input (questions, commands, exclamations) should yield no candidates.
+`NLPEngine.parse(input: string): NLPResult` accepts any string and returns zero or more `AlethicAssertoric` candidates. The output `SentenceSet` feeds directly into `PropositionalTheoryBuilder.fromSentenceSet()`.
 
 ## What Is Not Yet Implemented
 
 - `NLPEngine` — sentence segmentation, mood classification, confidence scoring
-- `SyntaxEngine` (propositional) — parsing strings/JSON into WFF instances
-- `EvaluationEngine` (propositional) — truth tables, tautology/contradiction checking
+- `PropositionalSyntaxEngine` — parsing formula strings into WFF instances
+- `PropositionalEvaluationEngine` — truth tables, tautology/contradiction classification
+- `PropositionalTheoryBuilder.fromSentenceSet()` — awaits SyntaxEngine
 - `Quantificational` language module
 - `Modal` language module
-- Completeness and expressive adequacy proofs (skipped test stubs)
 
 ## Conventions
 
-- Every logical construct exposes `value(): boolean` — the evaluation contract for all `Formula` types.
+- Every logical construct exposes `value(): boolean` — the evaluation contract.
+- `AlethicAssertoric` is the universal sentence input type — always construct sentences through it, even when building theories manually (`confidence: 1.0`).
 - Tests exhaustively cover every row of each operator's truth table.
-- New language modules follow the `propositional/` pattern: `<name>Types.d.ts`, class implementations, utils, builder, `index.ts`, and a matching `test/language/<name>/` directory.
-- Skipped tests (`test.skip`) mark planned work — they should describe the intended behaviour before implementation begins.
+- New language modules follow the `propositional/` pattern: types file, implementations, utils, builder, variable, theory, theory-builder, `index.ts`, matching `test/language/<name>/` directory.
+- Skipped tests (`test.skip`) mark planned work — they should describe intended behaviour before implementation begins.
