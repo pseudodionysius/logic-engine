@@ -41,8 +41,8 @@ src/
   language/
     shared/
       types.ts                                       # Formula, AlethicAssertoric, SentenceSet
-      theory.ts                                      # FormalSentence<F>, ConsistencyResult,
-                                                     # ProofNode, Theory<F> interface
+      theory.ts                                      # FormalSentence<F>, ConsistencyResult<V>,
+                                                      # ProofNode, Theory<F, V> interface
     propositional/
       propositionalTypes.d.ts                        # WFF, Atom, Complex, operators
       atom.ts                                        # AtomImpl
@@ -54,7 +54,17 @@ src/
       propositionalTheoryBuilder.ts                  # PropositionalTheoryBuilder (fluent builder)
       index.ts
     quantificational/
-      index.ts                                       # TODO
+      quantificationalTypes.d.ts                     # QFF, Term, Predicate, Quantifier, operators
+      term.ts                                        # VariableTerm, ConstantTerm
+      predicate.ts                                   # PredicateImpl
+      atomicFormula.ts                               # AtomicFormulaImpl
+      complexFormula.ts                              # ComplexFormulaImpl
+      quantifiedFormula.ts                           # QuantifiedFormulaImpl (∀, ∃)
+      quantificationalVariable.ts                    # QuantificationalVariable
+      quantificationalUtils.ts                       # binaryOperatorToLogic, type guards
+      quantificationalTheory.ts                      # QuantificationalTheory
+      quantificationalTheoryBuilder.ts               # QuantificationalTheoryBuilder
+      index.ts
     modal/
       index.ts                                       # TODO
   engine/
@@ -78,6 +88,15 @@ test/
       meta-logic/
         completeness.spec.ts                         # Full proof (135 tests total)
         expressiveAdequacy.spec.ts                   # Full inductive proof
+    quantificational/
+      term.spec.ts
+      predicate.spec.ts
+      atomicFormula.spec.ts
+      complexFormula.spec.ts
+      quantifiedFormula.spec.ts
+      quantificationalTheory.spec.ts
+      meta-logic/
+        completeness.spec.ts                         # Structural induction + quantifier duality
   engine/
     nlp/nlpEngine.spec.ts                            # Skipped placeholder
     syntax/propositional/syntaxEngine.spec.ts        # Skipped placeholder
@@ -121,9 +140,9 @@ test/
 | Type | Role |
 | --- | --- |
 | `FormalSentence<F>` | Pairs `AlethicAssertoric` source with a typed formula `F` and a label |
-| `ConsistencyResult` | Outcome of a consistency check: witness or failed valuations |
+| `ConsistencyResult<V>` | Outcome of a consistency check: witness or failed valuations (`V` defaults to `boolean`, quantificational uses `DomainElement`) |
 | `ProofNode` | Node in a structured proof tree |
-| `Theory<F>` | Interface all formal theories must implement |
+| `Theory<F, V>` | Interface all formal theories must implement (`V` is the valuation value type) |
 
 ## Propositional Logic — What's Implemented
 
@@ -169,6 +188,37 @@ theory.printGraph();
 - **Expressive adequacy** — inductive proof: base case covers all 4 unary truth functions; Shannon expansion is the inductive step; all 16 binary truth functions verified via DNF
 - **Completeness** — structural induction proof: `value()` is semantically correct at every level; known tautologies, contradictions, and contingencies classified correctly
 
+## Quantificational Logic — What's Implemented
+
+### Formula types
+
+- `DomainElement` — `string | number`, the elements of a finite domain of discourse
+- `VariableAssignment` — `Map<string, DomainElement>`, maps variable names to domain elements
+- `Term` — either a `VariableTerm` (resolved from assignment) or `ConstantTerm` (fixed element)
+- `Predicate` / `PredicateImpl` — n-ary relation with arity enforcement
+- `QFF` — Quantificational Formula, analogous to WFF; all valid first-order expressions
+- `AtomicFormulaImpl` — predicate applied to terms (analogous to `AtomImpl`)
+- `ComplexFormulaImpl` — two QFFs joined by a binary operator (same as propositional)
+- `QuantifiedFormulaImpl` — `∀` or `∃` binding a variable over a finite domain
+- Same operators as propositional: `~`, `&`, `|`, `->`, `<->`
+
+### Theory data structure
+
+**`QuantificationalVariable`** — named individual variable with mutable domain-element binding via shared assignment map. All formulas referencing this variable read its current binding.
+
+**`QuantificationalTheory`** — implements `Theory<QFF, DomainElement>`:
+- `checkConsistency()` — exhaustive `|D|^n` assignment enumeration
+- `buildProofTree()`, `printProof()`, `printGraph()` — same structure as propositional
+
+**`QuantificationalTheoryBuilder`** — fluent builder with `domain()`, `variable()`, `predicate()`, `sentence()`, `build()`.
+
+### Meta-logic proofs
+
+- **Completeness** — structural induction over AtomicFormula, ComplexFormula, QuantifiedFormula
+- **Quantifier duality** — `~∀x.F(x) ⟺ ∃x.~F(x)` and `~∃x.F(x) ⟺ ∀x.~F(x)`, verified over domains up to size 3
+- **Valid formulas** — universal instantiation, existential generalisation, distribution of ∀ over &
+- **Identity properties** — reflexivity and substitution (verified via exhaustive model checking)
+
 ## NLP Engine — Design Intent
 
 `NLPEngine.parse(input: string): NLPResult` accepts any string and returns zero or more `AlethicAssertoric` candidates. The output `SentenceSet` feeds directly into `PropositionalTheoryBuilder.fromSentenceSet()`.
@@ -179,7 +229,9 @@ theory.printGraph();
 - `PropositionalSyntaxEngine` — parsing formula strings into WFF instances
 - `PropositionalEvaluationEngine` — truth tables, tautology/contradiction classification
 - `PropositionalTheoryBuilder.fromSentenceSet()` — awaits SyntaxEngine
-- `Quantificational` language module
+- Quantificational function symbols (e.g., `f(x)`)
+- `QuantificationalSyntaxEngine` — parsing formula strings into QFF instances
+- `QuantificationalTheoryBuilder.fromSentenceSet()` — awaits SyntaxEngine
 - `Modal` language module
 
 ## Conventions

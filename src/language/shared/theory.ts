@@ -32,14 +32,14 @@ export interface ProofNode {
  * For an inconsistent theory, `failedValuations` records, for every
  * possible assignment, which sentence first failed — proving exhaustion.
  */
-export interface ConsistencyResult {
+export interface ConsistencyResult<V = boolean> {
   /** True when a satisfying variable assignment exists; false otherwise. */
   isConsistent: boolean;
   /** A satisfying variable assignment if the theory is consistent. */
-  witness?: Record<string, boolean>;
+  witness?: Record<string, V>;
   /** Evidence of exhaustion for each valuation if the theory is inconsistent. */
   failedValuations?: Array<{
-    valuation: Record<string, boolean>;
+    valuation: Record<string, V>;
     firstFailure: string;
   }>;
 }
@@ -52,12 +52,12 @@ export interface ConsistencyResult {
  * and to produce both a structured proof tree and a console-printable
  * logical relations graph.
  */
-export interface Theory<F extends Formula> {
+export interface Theory<F extends Formula, V = boolean> {
   /** The sentences constituting this theory. */
   sentences: FormalSentence<F>[];
 
   /** Determine whether all sentences can be simultaneously true. */
-  checkConsistency(): ConsistencyResult;
+  checkConsistency(): ConsistencyResult<V>;
 
   /**
    * Build a structured proof tree of the consistency result.

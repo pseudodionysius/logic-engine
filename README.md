@@ -227,9 +227,99 @@ const wff = builder.getWFF({ unaryOperator: undefined, proposition: true });
 
 ### Quantificational Logic
 
-> In Progress
+First-order quantificational logic (predicate logic) over finite domains. Extends propositional logic with universal (`∀`) and existential (`∃`) quantifiers, predicate symbols, and individual terms.
 
-Extends propositional logic with universal (`∀`) and existential (`∃`) quantifiers, predicate symbols, and individual variables.
+#### Terms
+
+The objects logic talks about. A `Term` is either a `ConstantTerm` or a `VariableTerm`.
+
+- **`ConstantTerm`**: A fixed individual (e.g., "Socrates", "42"). Resolves to the same element regardless of any variable assignment.
+- **`VariableTerm`**: A placeholder (e.g., "x", "y"). Resolves to its currently assigned domain element.
+
+```ts
+const a = new ConstantTerm('socrates');
+const x = new VariableTerm('x');
+```
+
+#### Predicates
+
+Relations over domain elements. A `PredicateImpl` has a name, arity (number of arguments), and an interpretation function.
+
+```ts
+// Unary: Mortal(x)
+const Mortal = new PredicateImpl('Mortal', 1, (x) => mortalSet.has(x));
+
+// Binary: Loves(x, y)
+const Loves = new PredicateImpl('Loves', 2, (x, y) => x === 'socrates' && y === 'plato');
+```
+
+**`IDENTITY` (=)**: A built-in binary predicate that holds if and only if its two arguments are the exact same domain element.
+
+```ts
+import { IDENTITY } from 'logic-engine';
+// IDENTITY.holds('a', 'a') → true
+```
+
+#### Formulas (`QFF`)
+
+- **`AtomicFormulaImpl`**: A predicate applied to the required number of terms (e.g., `Mortal(socrates)`).
+- **`ComplexFormulaImpl`**: Two `QFF`s joined by binary connectives (`&`, `|`, `->`, `<->`).
+- **`QuantifiedFormulaImpl`**: A `QFF` bound by a quantifier (`∀` or `∃`) over a variable name and a finite domain.
+
+```ts
+// ∀x.Mortal(x)
+const forallMortal = new QuantifiedFormulaImpl(
+  undefined, '∀', 'x', 
+  new AtomicFormulaImpl(undefined, Mortal, [new VariableTerm('x')], assignment), 
+  ['socrates', 'plato'], 
+  assignment
+);
+```
+
+#### `QuantificationalTheory` and `QuantificationalTheoryBuilder`
+
+Manages a set of formalised sentences and provides consistency checking over a **finite domain**.
+
+```ts
+const builder = new QuantificationalTheoryBuilder();
+builder.domain('socrates', 'plato', 'aristotle');
+
+const x = builder.variable('x');
+const Man = builder.predicate('Man', 1, (x) => x === 'socrates');
+const Mortal = builder.predicate('Mortal', 1, (x) => x === 'socrates');
+
+// φ1: ∀x.(Man(x) -> Mortal(x))
+const manX = new AtomicFormulaImpl(undefined, Man, [x.term()], builder.assignment);
+const mortalX = new AtomicFormulaImpl(undefined, Mortal, [x.term()], builder.assignment);
+const impl = new ComplexFormulaImpl(undefined, manX, '->', mortalX);
+
+builder.sentence(
+  { raw: 'All men are mortal', confidence: 1.0 },
+  new QuantifiedFormulaImpl(undefined, '∀', 'x', impl, builder.currentDomain, builder.assignment),
+  ['x']
+);
+
+// φ2: Man(socrates)
+builder.sentence(
+  { raw: 'Socrates is a man', confidence: 1.0 },
+  new AtomicFormulaImpl(undefined, Man, [new ConstantTerm('socrates')], builder.assignment),
+  []
+);
+
+const theory = builder.build();
+const result = theory.checkConsistency();
+// result.isConsistent → true
+```
+
+Consistency is decided by exhaustive evaluation over all $|D|^n$ variable assignments (where $D$ is the domain and $n$ is the number of free variables).
+
+#### Proofs and Graphs
+
+`QuantificationalTheory` supports the same structured output as propositional logic:
+
+- **`theory.printProof()`**: Shows the exhaustive check and first failure or satisfying witness.
+- **`theory.printGraph()`**: Maps relations between sentences (entailment, equivalence, inconsistency).
+
 
 ### Modal Logic
 

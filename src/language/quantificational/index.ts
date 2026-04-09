@@ -1,4 +1,10 @@
-// TODO: Quantificational logic
-// Extends propositional logic with universal (∀) and existential (∃) quantifiers,
-// predicate symbols, individual constants, and variables.
-export {};
+export * from './quantificationalTypes';
+export * from './term';
+export * from './predicate';
+export * from './atomicFormula';
+export * from './complexFormula';
+export * from './quantifiedFormula';
+export * from './quantificationalVariable';
+export * from './quantificationalUtils';
+export * from './quantificationalTheory';
+export * from './quantificationalTheoryBuilder';
