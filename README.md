@@ -323,9 +323,203 @@ Consistency is decided by exhaustive evaluation over all $|D|^n$ variable assign
 
 ### Modal Logic
 
-> In Progress
+Extends propositional logic with operators for necessity (`□`) and possibility (`◇`), evaluated over possible-worlds (Kripke) semantics. A **Kripke model** is a triple (W, R, V) where W is a finite set of worlds, R is an accessibility relation on W, and V assigns each proposition a set of worlds where it is true. Truth is always evaluated relative to a world.
 
-Extends propositional logic with operators for necessity (`□`) and possibility (`◇`), evaluated over possible-worlds semantics.
+```text
+M, w ⊨ □φ   iff  for all w' with wRw', M, w' ⊨ φ
+M, w ⊨ ◇φ   iff  there exists w' with wRw' such that M, w' ⊨ φ
+```
+
+#### `MFF` — Modal Well-Formed Formula
+
+Every modal expression is an `MFF`. All formula types satisfy `Formula` and expose `value(): boolean` evaluated at the current world in the shared model state.
+
+```ts
+interface MFF extends Formula {
+  unaryOperator: '~' | undefined;
+  value(): boolean;
+}
+```
+
+#### `ModalAtomImpl`
+
+A proposition letter. Its truth value varies by world, read from the shared valuation at the current world.
+
+```ts
+const state: ModalEvaluationState = { currentWorld: 'w0', valuation: new Map() };
+
+state.valuation.set('p', new Set(['w0', 'w1']));
+const p = new ModalAtomImpl(undefined, 'p', state);
+
+p.value()  // → true  (w0 ∈ extension of p)
+state.currentWorld = 'w2';
+p.value()  // → false (w2 ∉ extension of p)
+```
+
+#### `ModalComplexImpl`
+
+Two `MFF`s joined by a binary connective. Evaluated at the current world with the same truth-functional semantics as propositional logic.
+
+```ts
+const conj = new ModalComplexImpl(undefined, p, '&', q);
+const impl = new ModalComplexImpl(undefined, p, '->', q);
+```
+
+#### `ModalFormulaImpl`
+
+A necessity or possibility claim. Iterates over accessible worlds from the current world, exactly as a quantifier iterates over domain elements.
+
+```ts
+// □p: true at w iff p is true at every world accessible from w
+const boxP = new ModalFormulaImpl(undefined, '□', p, worlds, accessibility, state);
+
+// ◇p: true at w iff p is true at some world accessible from w
+const diaP = new ModalFormulaImpl(undefined, '◇', p, worlds, accessibility, state);
+```
+
+**`□` is vacuously true when no worlds are accessible.** This means `□p & ~p` is consistent in System K — the designated world need not access itself.
+
+Nesting works naturally since `ModalFormulaImpl` is itself an `MFF`:
+
+```ts
+// □□p — necessarily necessarily p
+const boxBoxP = new ModalFormulaImpl(undefined, '□', boxP, worlds, accessibility, state);
+```
+
+#### `ModalVariable`
+
+A named proposition letter that creates atoms sharing the same evaluation state. Analogous to `PropositionalVariable`.
+
+```ts
+const p = new ModalVariable('p', state);
+const pAtom    = p.atom();      // ModalAtomImpl for p
+const notPAtom = p.atom(true);  // ModalAtomImpl for ~p
+```
+
+#### Modal Systems
+
+A `ModalSystemSpec` encapsulates a system's name and its frame validation logic. The language layer (formula evaluation) is system-agnostic — the system only influences which frames are accepted on `build()` and how output is labelled.
+
+```ts
+interface ModalSystemSpec {
+  readonly name: string;
+  validateFrame(worlds: World[], accessibility: (from: World, to: World) => boolean): void;
+}
+```
+
+Five systems are provided out of the box:
+
+| Export | System | Frame condition | Key non-theorem |
+| --- | --- | --- | --- |
+| `SystemK` | K | None (any frame) | □p → p |
+| `SystemT` | T | Reflexive: wRw | □p → □□p |
+| `SystemD` | D | Serial: ∀w.∃w'.wRw' | □p → p |
+| `SystemS4` | S4 | Reflexive + Transitive | ◇p → □◇p |
+| `SystemS5` | S5 | Reflexive + Transitive + Symmetric | — |
+
+`build()` calls `validateFrame()` and throws a descriptive error if the frame does not satisfy the chosen system's conditions:
+
+```ts
+new ModalTheoryBuilder()
+  .system(SystemT)
+  .worlds('w0', 'w1')
+  .accessibility((f, t) => f === 'w0' && t === 'w1') // w1 has no self-loop
+  .designatedWorld('w0')
+  .build();
+// Error: System T requires a reflexive frame: world 'w1' does not access itself.
+```
+
+Custom systems are first-class — implement `ModalSystemSpec` and pass it to `.system()`.
+
+#### `ModalTheory` and `ModalTheoryBuilder`
+
+Build a modal theory with `ModalTheoryBuilder`. The default system is `SystemK`.
+
+```ts
+const builder = new ModalTheoryBuilder();
+builder
+  .system(SystemK)
+  .worlds('actual', 'possible')
+  .accessibility((f, t) => f === 'actual' && t === 'possible')
+  .designatedWorld('actual');
+
+const p = builder.proposition('p');
+
+// □p — it necessarily rains (p must be true at 'possible')
+const boxP = new ModalFormulaImpl(
+  undefined, '□', p.atom(),
+  builder.currentWorlds, builder.currentAccessibility, builder.state,
+);
+
+// ◇p — it possibly rains (p is true at some accessible world)
+const diaP = new ModalFormulaImpl(
+  undefined, '◇', p.atom(),
+  builder.currentWorlds, builder.currentAccessibility, builder.state,
+);
+
+builder
+  .sentence({ raw: 'Necessarily it rains', confidence: 1.0 }, boxP, ['p'])
+  .sentence({ raw: 'Possibly it rains',    confidence: 1.0 }, diaP, ['p']);
+
+const theory = builder.build();
+```
+
+**Check consistency:**
+
+```ts
+const result = theory.checkConsistency();
+// result.isConsistent → true
+// result.witness      → { 'p@actual': false, 'p@possible': true }
+```
+
+Consistency is decided by exhaustive enumeration of all 2^(|P|×|W|) valuations (P = proposition letters, W = worlds). The witness is keyed as `prop@world`.
+
+**Print a proof tree:**
+
+```ts
+theory.printProof();
+```
+
+```text
+CONSISTENCY PROOF — Modal Logic (System K)
+═════════════════════════════════════════════
+CONSISTENT ✓
+├── Theory: 2 sentence(s), 1 proposition(s) {p}, 2 world(s) {actual, possible}
+├── Kripke frame:
+│   ├── Worlds: {actual, possible}
+│   ├── Accessibility: {actualRpossible}
+│   └── Designated world: actual
+├── Method: exhaustive evaluation, 2^(1×2) = 4 valuations checked
+├── Per-world valuation:
+│   ├── actual:   {p=false}
+│   └── possible: {p=true}
+└── Verification (at designated world):
+    ├── φ1  ✓  "Necessarily it rains"
+    └── φ2  ✓  "Possibly it rains"
+```
+
+**Print a logical relations graph:**
+
+```ts
+theory.printGraph();
+```
+
+```text
+LOGICAL RELATIONS GRAPH — Modal Logic (System K)
+═══════════════════════════════════════════════════
+
+Frame: 2 world(s), designated: actual
+
+Sentences:
+  φ1    "Necessarily it rains"  [p]
+  φ2    "Possibly it rains"     [p]
+
+Pairwise relations:
+  φ1  ↔  φ2   ENTAILS  (φ1 ⊨ φ2)
+
+Shared propositions:
+  p:  φ1 — φ2
+```
 
 ## NLP Engine
 
