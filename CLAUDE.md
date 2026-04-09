@@ -66,7 +66,16 @@ src/
       quantificationalTheoryBuilder.ts               # QuantificationalTheoryBuilder
       index.ts
     modal/
-      index.ts                                       # TODO
+      modalTypes.d.ts                                # MFF, World, ModalOperator, ModalEvaluationState, ModalSystemSpec
+      modalSystems.ts                                # SystemK, SystemT, SystemD, SystemS4, SystemS5
+      modalAtom.ts                                   # ModalAtomImpl
+      modalComplex.ts                                # ModalComplexImpl
+      modalFormula.ts                                # ModalFormulaImpl (□, ◇)
+      modalVariable.ts                               # ModalVariable
+      modalUtils.ts                                  # binaryOperatorToLogic, type guards
+      modalTheory.ts                                 # ModalTheory, ModalFormalSentence
+      modalTheoryBuilder.ts                          # ModalTheoryBuilder
+      index.ts
   engine/
     nlp/
       nlpTypes.ts                                    # NLPResult (imports AlethicAssertoric from shared)
@@ -97,6 +106,13 @@ test/
       quantificationalTheory.spec.ts
       meta-logic/
         completeness.spec.ts                         # Structural induction + quantifier duality
+    modal/
+      modalAtom.spec.ts
+      modalComplex.spec.ts
+      modalFormula.spec.ts
+      modalTheory.spec.ts                            # Builder, consistency, proof tree, system validation
+      meta-logic/
+        completeness.spec.ts                         # K axiom, modal duality, distribution, non-theorems
   engine/
     nlp/nlpEngine.spec.ts                            # Skipped placeholder
     syntax/propositional/syntaxEngine.spec.ts        # Skipped placeholder
@@ -219,6 +235,62 @@ theory.printGraph();
 - **Valid formulas** — universal instantiation, existential generalisation, distribution of ∀ over &
 - **Identity properties** — reflexivity and substitution (verified via exhaustive model checking)
 
+## Modal Logic — What's Implemented
+
+### Type system
+
+- `World` — `string`, the points of evaluation in Kripke semantics
+- `ModalEvaluationState` — shared mutable state: `currentWorld: World` + `valuation: Map<string, Set<World>>`
+- `MFF` — Modal Formula, the union of all valid modal expressions (analogous to WFF/QFF)
+- `ModalSystemSpec` — interface: `name` + `validateFrame(worlds, accessibility)` — encapsulates frame conditions independently of the language layer
+- Same operators as propositional: `~`, `&`, `|`, `->`, `<->`
+- Modal operators: `□` (necessity), `◇` (possibility)
+
+### Modal formula types
+
+- `ModalAtomImpl` — proposition letter; reads truth value from `valuation[name]` at `currentWorld`
+- `ModalComplexImpl` — two MFFs joined by a binary connective (identical semantics to propositional)
+- `ModalFormulaImpl` — `□` or `◇` operator; iterates over worlds accessible from `currentWorld` via the accessibility relation (directly parallels `QuantifiedFormulaImpl` iterating over domain elements); restores `currentWorld` after evaluation
+
+### Systems (frame conditions)
+
+Five concrete `ModalSystemSpec` objects are provided:
+
+| Export | Name | Frame condition |
+| --- | --- | --- |
+| `SystemK` | K | None — any frame valid |
+| `SystemT` | T | Reflexive: `wRw` for all `w` |
+| `SystemD` | D | Serial: every world has at least one successor |
+| `SystemS4` | S4 | Reflexive + Transitive |
+| `SystemS5` | S5 | Reflexive + Transitive + Symmetric |
+
+**Language layer is system-agnostic.** `ModalAtomImpl`, `ModalComplexImpl`, `ModalFormulaImpl`, and `ModalVariable` contain zero system references. Systems only affect `ModalTheoryBuilder.build()` validation and `printProof()`/`printGraph()` labels.
+
+### Theory data structure
+
+**`ModalVariable`** — named proposition letter; `atom(negated?)` returns a `ModalAtomImpl` referencing the shared state.
+
+**`ModalTheory`** — implements `Theory<MFF, boolean>`:
+
+- `checkConsistency()` — exhaustive 2^(|P|×|W|) enumeration; witness keyed as `prop@world`
+- `buildProofTree()` — includes Kripke frame node (worlds, accessibility pairs, designated world) and per-world valuation table; distinct from propositional/quantificational proof trees which show variable assignments
+- `printProof()`, `printGraph()` — same interface as other theories; system name appears in header
+
+**`ModalTheoryBuilder`** — fluent builder: `system()` (default `SystemK`), `worlds()`, `accessibility()`, `designatedWorld()`, `proposition()`, `sentence()`, `build()`. `build()` calls `system.validateFrame()` before constructing the theory — throws with a descriptive message if the frame violates the system's conditions.
+
+### Meta-logic proofs
+
+- **Completeness** — structural induction over `ModalAtomImpl`, `ModalComplexImpl`, `ModalFormulaImpl`; exhaustive evaluation verified as a decision procedure
+- **Modal duality** — `□p ⟺ ~◇~p` and `◇p ⟺ ~□~p`, verified over 6 distinct frame structures
+- **K axiom** — `□(p → q) → (□p → □q)`, verified exhaustively on all test frames
+- **Distribution** — `□(p & q) ⟺ (□p & □q)`, verified exhaustively
+- **Necessitation** — `□(p | ~p)` valid on every frame
+- **Non-theorems of K** — `□p → p` (requires T), `□p → □□p` (requires 4), `◇p → □◇p` (requires 5): countermodels constructed and verified
+
+### Design notes
+
+`docs/modal/design.md` covers Kripke semantics, system hierarchy, and the analogy table between quantificational and modal constructs (domain ↔ worlds, ∀/∃ ↔ □/◇, etc.).
+
 ## NLP Engine — Design Intent
 
 `NLPEngine.parse(input: string): NLPResult` accepts any string and returns zero or more `AlethicAssertoric` candidates. The output `SentenceSet` feeds directly into `PropositionalTheoryBuilder.fromSentenceSet()`.
@@ -232,7 +304,9 @@ theory.printGraph();
 - Quantificational function symbols (e.g., `f(x)`)
 - `QuantificationalSyntaxEngine` — parsing formula strings into QFF instances
 - `QuantificationalTheoryBuilder.fromSentenceSet()` — awaits SyntaxEngine
-- `Modal` language module
+- `ModalSyntaxEngine` — parsing formula strings into MFF instances
+- `ModalTheoryBuilder.fromSentenceSet()` — awaits ModalSyntaxEngine
+- Quantified modal logic (combining QFF quantifiers with modal operators)
 
 ## Conventions
 
