@@ -1,7 +1,7 @@
 import { ModalTheoryBuilder } from '../../../src/language/modal/modalTheoryBuilder';
-import { ModalAtomImpl } from '../../../src/language/modal/modalAtom';
 import { ModalComplexImpl } from '../../../src/language/modal/modalComplex';
 import { ModalFormulaImpl } from '../../../src/language/modal/modalFormula';
+import { SystemK, SystemT, SystemD, SystemS4, SystemS5 } from '../../../src/language/modal/modalSystems';
 import { AlethicAssertoric } from '../../../src/language/shared/types';
 import { World } from '../../../src/language/modal/modalTypes';
 
@@ -358,5 +358,172 @@ describe('ModalTheory — printProof() and printGraph()', () => {
       .sentence(sentence('p'), p.atom(), ['p'])
       .sentence(sentence('q'), q.atom(), ['q']);
     expect(() => builder.build().printGraph()).not.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ModalTheory — system field', () => {
+
+  test('theory built without .system() defaults to K', () => {
+    const builder = new ModalTheoryBuilder();
+    builder.worlds('w0').designatedWorld('w0');
+    expect(builder.build().system.name).toBe('K');
+  });
+
+  test('.system(SystemK) produces a theory with system.name === "K"', () => {
+    const builder = new ModalTheoryBuilder();
+    builder.system(SystemK).worlds('w0').designatedWorld('w0');
+    expect(builder.build().system.name).toBe('K');
+  });
+
+  test('.system(SystemT) produces a theory with system.name === "T"', () => {
+    const builder = new ModalTheoryBuilder();
+    builder
+      .system(SystemT)
+      .worlds('w0')
+      .accessibility((f: World, t: World) => f === t) // reflexive
+      .designatedWorld('w0');
+    expect(builder.build().system.name).toBe('T');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ModalTheoryBuilder — frame validation on build()', () => {
+
+  describe('SystemK — accepts any frame', () => {
+
+    test('accepts a frame with no accessibility', () => {
+      const builder = new ModalTheoryBuilder();
+      builder.system(SystemK).worlds('w0', 'w1').accessibility(() => false).designatedWorld('w0');
+      expect(() => builder.build()).not.toThrow();
+    });
+
+    test('accepts a non-reflexive frame', () => {
+      const builder = new ModalTheoryBuilder();
+      builder.system(SystemK).worlds('w0').accessibility(() => false).designatedWorld('w0');
+      expect(() => builder.build()).not.toThrow();
+    });
+  });
+
+  describe('SystemT — requires reflexivity', () => {
+
+    test('accepts a reflexive frame', () => {
+      const builder = new ModalTheoryBuilder();
+      builder
+        .system(SystemT)
+        .worlds('w0', 'w1')
+        .accessibility((f: World, t: World) => f === t)
+        .designatedWorld('w0');
+      expect(() => builder.build()).not.toThrow();
+    });
+
+    test('rejects a non-reflexive frame', () => {
+      const builder = new ModalTheoryBuilder();
+      builder
+        .system(SystemT)
+        .worlds('w0', 'w1')
+        .accessibility((f: World, t: World) => f === 'w0' && t === 'w1') // w0→w1 only, no self-loops
+        .designatedWorld('w0');
+      expect(() => builder.build()).toThrow(/System T/);
+    });
+
+    test('error message names the violating world', () => {
+      const builder = new ModalTheoryBuilder();
+      builder
+        .system(SystemT)
+        .worlds('w0', 'w1')
+        .accessibility((f: World, t: World) => f === 'w0' && t === 'w0') // w1 has no self-loop
+        .designatedWorld('w0');
+      expect(() => builder.build()).toThrow(/w1/);
+    });
+  });
+
+  describe('SystemD — requires seriality', () => {
+
+    test('accepts a serial frame', () => {
+      const builder = new ModalTheoryBuilder();
+      // w0→w1, w1→w0: every world has at least one successor
+      builder
+        .system(SystemD)
+        .worlds('w0', 'w1')
+        .accessibility((f: World, t: World) =>
+          (f === 'w0' && t === 'w1') || (f === 'w1' && t === 'w0'),
+        )
+        .designatedWorld('w0');
+      expect(() => builder.build()).not.toThrow();
+    });
+
+    test('rejects a frame with a dead-end world', () => {
+      const builder = new ModalTheoryBuilder();
+      builder
+        .system(SystemD)
+        .worlds('w0', 'w1')
+        .accessibility(() => false) // no world accesses anything
+        .designatedWorld('w0');
+      expect(() => builder.build()).toThrow(/System D/);
+    });
+  });
+
+  describe('SystemS4 — requires reflexivity + transitivity', () => {
+
+    test('accepts a reflexive and transitive frame', () => {
+      const builder = new ModalTheoryBuilder();
+      // All worlds see all worlds (complete = reflexive + transitive + symmetric)
+      builder
+        .system(SystemS4)
+        .worlds('w0', 'w1', 'w2')
+        .accessibility(() => true)
+        .designatedWorld('w0');
+      expect(() => builder.build()).not.toThrow();
+    });
+
+    test('rejects a non-reflexive frame', () => {
+      const builder = new ModalTheoryBuilder();
+      builder
+        .system(SystemS4)
+        .worlds('w0', 'w1')
+        .accessibility((f: World, t: World) => f === 'w0' && t === 'w1')
+        .designatedWorld('w0');
+      expect(() => builder.build()).toThrow(/System T/); // S4 delegates reflexivity check to T
+    });
+
+    test('rejects a reflexive but non-transitive frame', () => {
+      const builder = new ModalTheoryBuilder();
+      // w0→w0, w1→w1, w2→w2, w0→w1, w1→w2 but NOT w0→w2
+      builder
+        .system(SystemS4)
+        .worlds('w0', 'w1', 'w2')
+        .accessibility((f: World, t: World) =>
+          f === t || (f === 'w0' && t === 'w1') || (f === 'w1' && t === 'w2'),
+        )
+        .designatedWorld('w0');
+      expect(() => builder.build()).toThrow(/System S4/);
+    });
+  });
+
+  describe('SystemS5 — requires reflexivity + transitivity + symmetry', () => {
+
+    test('accepts an equivalence-relation frame', () => {
+      const builder = new ModalTheoryBuilder();
+      builder
+        .system(SystemS5)
+        .worlds('w0', 'w1')
+        .accessibility(() => true) // fully connected = equivalence relation
+        .designatedWorld('w0');
+      expect(() => builder.build()).not.toThrow();
+    });
+
+    test('rejects a reflexive+transitive but asymmetric frame', () => {
+      const builder = new ModalTheoryBuilder();
+      // w0→w0, w1→w1, w0→w1, but NOT w1→w0
+      builder
+        .system(SystemS5)
+        .worlds('w0', 'w1')
+        .accessibility((f: World, t: World) => f === t || (f === 'w0' && t === 'w1'))
+        .designatedWorld('w0');
+      expect(() => builder.build()).toThrow(/System S5/);
+    });
   });
 });

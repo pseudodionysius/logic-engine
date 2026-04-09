@@ -61,10 +61,28 @@ interface MFF extends Formula {
 }
 
 /**
- * The modal system determining which frame conditions are enforced.
- * Currently only K (no conditions) is implemented.
+ * Specification for a modal logic system.
+ *
+ * A modal system is a set of frame conditions that constrain which Kripke
+ * frames are valid for that system. The spec encapsulates both the system
+ * name (used in output) and its frame validation logic.
+ *
+ * Concrete instances live in modalSystems.ts. The language layer
+ * (formula evaluation) is entirely system-agnostic — only the theory
+ * builder and theory output depend on this interface.
  */
-type ModalSystem = 'K';
+interface ModalSystemSpec {
+  /** Display name of the system (e.g. 'K', 'T', 'S4', 'S5'). */
+  readonly name: string;
+  /**
+   * Validate that the given frame satisfies this system's conditions.
+   * Throws a descriptive error if any condition is violated.
+   *
+   * @param worlds        - The set of possible worlds.
+   * @param accessibility - The accessibility relation to validate.
+   */
+  validateFrame(worlds: World[], accessibility: (from: World, to: World) => boolean): void;
+}
 
 export {
   World,
@@ -73,5 +91,5 @@ export {
   BinaryOperator,
   ModalEvaluationState,
   MFF,
-  ModalSystem,
+  ModalSystemSpec,
 };

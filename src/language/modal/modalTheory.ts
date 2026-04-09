@@ -1,4 +1,4 @@
-import { MFF, World, ModalEvaluationState } from './modalTypes';
+import { MFF, World, ModalEvaluationState, ModalSystemSpec } from './modalTypes';
 import { ModalVariable } from './modalVariable';
 import { FormalSentence, Theory, ConsistencyResult, ProofNode } from '../shared/theory';
 
@@ -73,6 +73,9 @@ export class ModalTheory implements Theory<MFF, boolean> {
   /** The designated world (where sentences are evaluated). */
   readonly designatedWorld: World;
 
+  /** The modal system spec (determines frame conditions and display name). */
+  readonly system: ModalSystemSpec;
+
   /** The named proposition variables, keyed by name. */
   private readonly variables: Map<string, ModalVariable>;
 
@@ -86,6 +89,7 @@ export class ModalTheory implements Theory<MFF, boolean> {
     designatedWorld: World,
     variables: Map<string, ModalVariable>,
     state: ModalEvaluationState,
+    system: ModalSystemSpec,
   ) {
     this.sentences = sentences;
     this.worlds = worlds;
@@ -93,6 +97,7 @@ export class ModalTheory implements Theory<MFF, boolean> {
     this.designatedWorld = designatedWorld;
     this.variables = variables;
     this.state = state;
+    this.system = system;
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -214,7 +219,7 @@ export class ModalTheory implements Theory<MFF, boolean> {
   /** Print the proof tree to the console. */
   printProof(): void {
     const tree = this.buildProofTree();
-    console.log('\nCONSISTENCY PROOF — Modal Logic (System K)');
+    console.log(`\nCONSISTENCY PROOF — Modal Logic (System ${this.system.name})`);
     console.log('═'.repeat(45));
     printTreeRoot(tree);
     console.log('');
@@ -226,7 +231,7 @@ export class ModalTheory implements Theory<MFF, boolean> {
   printGraph(): void {
     const n = this.sentences.length;
 
-    console.log('\nLOGICAL RELATIONS GRAPH — Modal Logic (System K)');
+    console.log(`\nLOGICAL RELATIONS GRAPH — Modal Logic (System ${this.system.name})`);
     console.log('═'.repeat(51));
 
     // Frame summary

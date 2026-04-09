@@ -1,4 +1,5 @@
 export * from './modalTypes';
+export * from './modalSystems';
 export * from './modalAtom';
 export * from './modalComplex';
 export * from './modalFormula';
