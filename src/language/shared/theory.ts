@@ -1,5 +1,32 @@
 import { Formula, AlethicAssertoric } from './types';
 
+// ─── Pairwise relation types ──────────────────────────────────────────────────
+
+/**
+ * The logical relation between two sentences determined by exhaustive
+ * evaluation over all variable assignments.
+ *
+ * - INCONSISTENT   — no assignment makes both sentences true simultaneously
+ * - EQUIVALENT     — both sentences have the same truth value in every assignment
+ * - ENTAILS_RIGHT  — s1 ⊨ s2: whenever s1 is true, s2 is also true
+ * - ENTAILS_LEFT   — s2 ⊨ s1: whenever s2 is true, s1 is also true
+ * - CONSISTENT     — there exists an assignment making both sentences true,
+ *                    but neither entails the other
+ */
+export type PairwiseRelation =
+  | 'INCONSISTENT'
+  | 'EQUIVALENT'
+  | 'ENTAILS_LEFT'    // s1 ⊨ s2 (no case where s1=T and s2=F)
+  | 'ENTAILS_RIGHT'   // s2 ⊨ s1 (no case where s1=F and s2=T)
+  | 'CONSISTENT';
+
+/** A typed pairwise relation record returned by Theory.pairwiseRelations(). */
+export interface PairwiseSentenceRelation<F extends Formula> {
+  a: FormalSentence<F>;
+  b: FormalSentence<F>;
+  relation: PairwiseRelation;
+}
+
 /**
  * A sentence within a formal theory — pairs the source natural language
  * sentence with its formal representation in a given logic.
@@ -73,4 +100,12 @@ export interface Theory<F extends Formula, V = boolean> {
    * Shows pairwise consistency, entailment, and shared variables.
    */
   printGraph(): void;
+
+  /**
+   * Return the pairwise logical relation for every (i, j) pair of sentences
+   * where i < j, as typed data.
+   *
+   * The array has C(n, 2) entries for n sentences.
+   */
+  pairwiseRelations(): PairwiseSentenceRelation<F>[];
 }

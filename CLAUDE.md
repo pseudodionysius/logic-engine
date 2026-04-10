@@ -96,6 +96,13 @@ src/
     semantics/
       propositional/
         evaluationEngine.ts                          # PropositionalEvaluationEngine — truth tables, classification
+    dialectic/
+      dialecticTypes.ts                              # Argument, ContentiousClaim, ArgumentTarget, ArgumentStance,
+                                                      # EntailmentStrength, ClaimRelation, ArgumentEvaluation,
+                                                      # ArgumentTension, DialecticalMapResult
+      dialecticalMap.ts                              # DialecticalMap — evaluation engine (validity, claim relation, tensions)
+      dialecticalMapBuilder.ts                       # DialecticalMapBuilder — fluent builder
+      index.ts
 
 test/
   language/
@@ -137,6 +144,9 @@ test/
       syntaxTreePrinter.spec.ts
       propositional/syntaxEngine.spec.ts
     semantics/propositional/evaluationEngine.spec.ts
+    dialectic/
+      dialecticalMap.spec.ts
+      dialecticalMapBuilder.spec.ts
 ```
 
 ### TypeScript Config Split
@@ -179,6 +189,8 @@ test/
 | `ConsistencyResult<V>` | Outcome of a consistency check: witness or failed valuations (`V` defaults to `boolean`, quantificational uses `DomainElement`) |
 | `ProofNode` | Node in a structured proof tree |
 | `Theory<F, V>` | Interface all formal theories must implement (`V` is the valuation value type) |
+| `PairwiseRelation` | `'INCONSISTENT' \| 'EQUIVALENT' \| 'ENTAILS_LEFT' \| 'ENTAILS_RIGHT' \| 'CONSISTENT'` — `ENTAILS_LEFT` means s1 ⊨ s2 (no case where s1=T and s2=F); `ENTAILS_RIGHT` is the mirror |
+| `PairwiseSentenceRelation<F>` | `{ a, b, relation }` — typed record returned by `Theory.pairwiseRelations()` |
 
 ## Propositional Logic — What's Implemented
 
@@ -200,6 +212,7 @@ test/
 - `buildProofTree()` — structured `ProofNode` tree of the consistency result
 - `printProof()` — prints the proof tree to the console with box-drawing characters
 - `printGraph()` — prints pairwise logical relations (consistent / entails / equivalent / inconsistent) and shared-variable edges
+- `pairwiseRelations()` — returns all C(n,2) pairwise `PairwiseSentenceRelation<WFF>[]` as typed data (the same computation underlying `printGraph()`, now accessible programmatically)
 
 **`PropositionalTheoryBuilder`** — fluent builder:
 
@@ -245,6 +258,7 @@ theory.printGraph();
 **`QuantificationalTheory`** — implements `Theory<QFF, DomainElement>`:
 - `checkConsistency()` — exhaustive `|D|^n` assignment enumeration
 - `buildProofTree()`, `printProof()`, `printGraph()` — same structure as propositional
+- `pairwiseRelations()` — returns `PairwiseSentenceRelation<QFF>[]`
 
 **`QuantificationalTheoryBuilder`** — fluent builder with `domain()`, `variable()`, `predicate()`, `sentence()`, `build()`.
 
@@ -295,6 +309,7 @@ Five concrete `ModalSystemSpec` objects are provided:
 - `checkConsistency()` — exhaustive 2^(|P|×|W|) enumeration; witness keyed as `prop@world`
 - `buildProofTree()` — includes Kripke frame node (worlds, accessibility pairs, designated world) and per-world valuation table; distinct from propositional/quantificational proof trees which show variable assignments
 - `printProof()`, `printGraph()` — same interface as other theories; system name appears in header
+- `pairwiseRelations()` — returns `PairwiseSentenceRelation<MFF>[]`
 
 **`ModalTheoryBuilder`** — fluent builder: `system()` (default `SystemK`), `worlds()`, `accessibility()`, `designatedWorld()`, `proposition()`, `sentence()`, `build()`. `build()` calls `system.validateFrame()` before constructing the theory — throws with a descriptive message if the frame violates the system's conditions.
 
@@ -424,6 +439,45 @@ The `kind` discriminator maps directly to a protobuf `oneof`. `PhraseLabel` and 
 - `classify(formulaString): WFFClassification` — `'tautology'` | `'contradiction'` | `'contingency'`.
 - `truthTable(formulaString): TruthTable` — `{ variables, rows: { assignment, value }[] }`.
 - `printTruthTable(formulaString): void` — formatted console output with box-drawing separator.
+
+## Dialectical Map — What's Implemented
+
+The dialectical map (`src/engine/dialectic/`) provides formal evaluation of multi-argument discourse around a central contention. All evaluation is propositional.
+
+### Core types (`dialecticTypes.ts`)
+
+- **`ContentiousClaim`** — `{ claim: AlethicAssertoric, label: string }` — the focal claim under dispute.
+- **`ArgumentTarget`** — discriminated union: `{ kind: 'claim' }` | `{ kind: 'argument', argumentId }` | `{ kind: 'premise', argumentId, premiseIndex }`. An argument can target the central claim, another argument's sub-conclusion, or a specific premise within another argument.
+- **`ArgumentStance`** — `'supports' | 'attacks' | 'qualifies' | 'undermines' | 'concedes'` — how the argument relates to its target.
+- **`Argument`** — `{ id, label, premises, subConclusion, target, stance }`.
+- **`EntailmentStrength`** — `'valid' | 'consistent' | 'inconsistent' | 'undetermined'` — formal validity of the argument's internal inference.
+- **`ClaimRelation`** — `'entails' | 'entailed-by' | 'equivalent' | 'contradicts' | 'consistent' | 'undetermined'` — how the sub-conclusion relates to the central claim.
+- **`ArgumentEvaluation`** — `{ argumentId, internalValidity, claimRelation, strength }`.
+- **`ArgumentTension`** — `{ argumentIdA, argumentIdB, conclusionRelation: PairwiseRelation }` — pairwise formal relation between two arguments' sub-conclusions.
+- **`DialecticalMapResult`** — `{ claim, arguments, evaluations, tensions }` — full output of `evaluate()`.
+
+### `DialecticalMap` (`dialecticalMap.ts`)
+
+Stateless evaluation class constructed from a `ContentiousClaim` and `Argument[]`. Construct via `DialecticalMapBuilder`.
+
+**`evaluate(): DialecticalMapResult`** — for each argument:
+
+1. Translates all sentences (premises + sub-conclusion) through `FormalAnnotator` → `FormalTranslator` → `PropositionalSyntaxEngine` with a shared variable registry.
+2. Synthesises a premise-conjunction formula string: `"(f1) & (f2) & ..."`.
+3. Builds a 2-sentence `PropositionalTheory` `[premise-conjunction, sub-conclusion]` and calls `pairwiseRelations()` to determine `internalValidity`.
+4. Builds a 2-sentence theory `[sub-conclusion, claim]` to determine `claimRelation`.
+5. Builds a 2-sentence theory for every argument pair to determine `conclusionRelation` in `tensions`.
+6. Computes `strength = avg(premise.confidence) × validityWeight` (1.0 / 0.5 / 0.0 for valid / consistent / otherwise).
+
+**`printReport(): void`** — formatted console output listing each argument with its validity, claim relation, strength, and the pairwise tension matrix.
+
+### `DialecticalMapBuilder` (`dialecticalMapBuilder.ts`)
+
+Fluent builder: `.claim(sentence, label)`, `.argument(arg)`, `.build()`. Throws if `.build()` is called without setting a claim.
+
+### Important note on `ENTAILS_LEFT` / `ENTAILS_RIGHT`
+
+The condition that produces `ENTAILS_LEFT` is `!s1TrueS2False` (no case where s1=T and s2=F), which means **s1 ⊨ s2** (the left sentence entails the right). `ENTAILS_RIGHT` is the mirror. The comments in the original theory files have this backwards; `PairwiseRelation` in `shared/theory.ts` has the correct semantics documented.
 
 ## What Is Not Yet Implemented
 

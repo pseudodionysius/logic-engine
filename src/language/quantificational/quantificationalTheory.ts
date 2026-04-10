@@ -1,6 +1,6 @@
 import { QFF, DomainElement, VariableAssignment } from './quantificationalTypes';
 import { QuantificationalVariable } from './quantificationalVariable';
-import { FormalSentence, Theory, ConsistencyResult, ProofNode } from '../shared/theory';
+import { FormalSentence, Theory, ConsistencyResult, ProofNode, PairwiseRelation, PairwiseSentenceRelation } from '../shared/theory';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -250,11 +250,26 @@ export class QuantificationalTheory implements Theory<QFF, DomainElement> {
   /**
    * Compute the pairwise logical relation between two sentences.
    */
+  pairwiseRelations(): PairwiseSentenceRelation<QFF>[] {
+    const varNames = Array.from(this.variables.keys());
+    const results: PairwiseSentenceRelation<QFF>[] = [];
+    for (let i = 0; i < this.sentences.length; i++) {
+      for (let j = i + 1; j < this.sentences.length; j++) {
+        results.push({
+          a: this.sentences[i],
+          b: this.sentences[j],
+          relation: this._pairwiseRelation(this.sentences[i], this.sentences[j], varNames),
+        });
+      }
+    }
+    return results;
+  }
+
   private _pairwiseRelation(
     s1: QuantificationalFormalSentence,
     s2: QuantificationalFormalSentence,
     varNames: string[],
-  ): string {
+  ): PairwiseRelation {
     let bothTrue        = false;
     let s1TrueS2False   = false;
     let s1FalseS2True   = false;

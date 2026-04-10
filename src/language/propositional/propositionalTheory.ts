@@ -1,6 +1,6 @@
 import { WFF } from './propositionalTypes';
 import { PropositionalVariable } from './propositionalVariable';
-import { FormalSentence, Theory, ConsistencyResult, ProofNode } from '../shared/theory';
+import { FormalSentence, Theory, ConsistencyResult, ProofNode, PairwiseRelation, PairwiseSentenceRelation } from '../shared/theory';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -13,23 +13,6 @@ export interface PropositionalFormalSentence extends FormalSentence<WFF> {
   /** Names of the PropositionalVariables this formula's truth value depends on. */
   variableNames: string[];
 }
-
-/**
- * The pairwise logical relation between two sentences in the same theory,
- * determined by exhaustive evaluation over all shared variable assignments.
- *
- * - INCONSISTENT   — no assignment makes both sentences true simultaneously
- * - EQUIVALENT     — both sentences have the same truth value in every assignment
- * - ENTAILS_RIGHT  — s1 ⊨ s2: whenever s1 is true, s2 is also true
- * - ENTAILS_LEFT   — s2 ⊨ s1: whenever s2 is true, s1 is also true
- * - CONSISTENT     — there exists an assignment making both sentences true
- */
-export type PairwiseRelation =
-  | 'INCONSISTENT'
-  | 'EQUIVALENT'
-  | 'ENTAILS_RIGHT'   // s1 ⊨ s2
-  | 'ENTAILS_LEFT'    // s2 ⊨ s1
-  | 'CONSISTENT';
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
@@ -241,6 +224,25 @@ export class PropositionalTheory implements Theory<WFF> {
     }
 
     console.log('');
+  }
+
+  /**
+   * Return the pairwise logical relation for every (i, j) pair of sentences
+   * where i < j, as typed data.
+   */
+  pairwiseRelations(): PairwiseSentenceRelation<WFF>[] {
+    const varNames = Array.from(this.variables.keys());
+    const results: PairwiseSentenceRelation<WFF>[] = [];
+    for (let i = 0; i < this.sentences.length; i++) {
+      for (let j = i + 1; j < this.sentences.length; j++) {
+        results.push({
+          a: this.sentences[i],
+          b: this.sentences[j],
+          relation: this._pairwiseRelation(this.sentences[i], this.sentences[j], varNames),
+        });
+      }
+    }
+    return results;
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

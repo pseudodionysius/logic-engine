@@ -656,6 +656,158 @@ const theory = new PropositionalTheoryBuilder().fromSentenceSet(result.sentenceS
 theory.printProof();
 ```
 
+## Dialectical Map
+
+`DialecticalMap` organises an unbounded collection of structured `Argument` entities around a central `ContentiousClaim` and formally evaluates each argument's inferential relationship to the claim and to every other argument.
+
+Unlike `ArgumentAnalyser` (which works over flat sentence lists), the dialectical map treats each argument as an independent unit with its own internal premise → conclusion structure and an explicit target.
+
+### Core types
+
+```ts
+interface ContentiousClaim {
+  claim: AlethicAssertoric;
+  label: string;
+}
+
+interface Argument {
+  id: string;
+  label: string;
+  premises: AlethicAssertoric[];
+  subConclusion: AlethicAssertoric;
+  target: ArgumentTarget;   // { kind: 'claim' } | { kind: 'argument', argumentId } | { kind: 'premise', argumentId, premiseIndex }
+  stance: ArgumentStance;   // 'supports' | 'attacks' | 'qualifies' | 'undermines' | 'concedes'
+}
+```
+
+### Building a dialectical map
+
+```ts
+import { DialecticalMapBuilder } from 'logic-engine';
+
+const map = new DialecticalMapBuilder()
+  .claim({ raw: 'Capital punishment is justified', confidence: 1.0 }, 'Central Claim')
+  .argument({
+    id: 'deterrence',
+    label: 'The Deterrence Argument',
+    premises: [
+      { raw: 'Capital punishment deters violent crime', confidence: 0.8 },
+      { raw: 'Deterring crime saves innocent lives',    confidence: 0.9 },
+    ],
+    subConclusion: { raw: 'Capital punishment saves innocent lives', confidence: 0.85 },
+    target: { kind: 'claim' },
+    stance: 'supports',
+  })
+  .argument({
+    id: 'irreversibility',
+    label: 'The Irreversibility Objection',
+    premises: [
+      { raw: 'Wrongful executions cannot be undone', confidence: 0.95 },
+      { raw: 'The justice system makes errors',      confidence: 0.90 },
+    ],
+    subConclusion: { raw: 'Capital punishment risks irreversible injustice', confidence: 0.85 },
+    target: { kind: 'claim' },
+    stance: 'attacks',
+  })
+  .argument({
+    id: 'rebuttal',
+    label: 'Rebuttal to Deterrence',
+    premises: [
+      { raw: 'Empirical studies show no deterrent effect', confidence: 0.75 },
+    ],
+    subConclusion: { raw: 'The deterrence premise is false', confidence: 0.70 },
+    target: { kind: 'premise', argumentId: 'deterrence', premiseIndex: 0 },
+    stance: 'undermines',
+  })
+  .build();
+```
+
+Arguments can target the central claim, another argument's sub-conclusion, or a specific premise within another argument.
+
+### Evaluating
+
+```ts
+const result = map.evaluate();
+```
+
+`evaluate()` returns a `DialecticalMapResult`:
+
+```ts
+interface DialecticalMapResult {
+  claim: ContentiousClaim;
+  arguments: Argument[];
+  evaluations: ArgumentEvaluation[];   // one per argument
+  tensions: ArgumentTension[];         // C(n,2) pairwise pairs
+}
+```
+
+Each `ArgumentEvaluation` contains:
+
+```ts
+interface ArgumentEvaluation {
+  argumentId: string;
+  internalValidity: EntailmentStrength;  // 'valid' | 'consistent' | 'inconsistent' | 'undetermined'
+  claimRelation: ClaimRelation;          // 'entails' | 'entailed-by' | 'equivalent' | 'contradicts' | 'consistent' | 'undetermined'
+  strength: number;                      // avg(premise.confidence) × validity weight ∈ [0, 1]
+}
+```
+
+- **`internalValidity`** — whether the argument's premise-conjunction formally entails its sub-conclusion (`valid`), is consistent with it, or inconsistent.
+- **`claimRelation`** — how the sub-conclusion relates to the central claim under propositional evaluation.
+- **`strength`** — `avg(premise.confidence) × weight` where `weight` is `1.0` (valid), `0.5` (consistent), or `0.0` (otherwise).
+
+Each `ArgumentTension` gives the pairwise formal relation between two arguments' sub-conclusions:
+
+```ts
+interface ArgumentTension {
+  argumentIdA: string;
+  argumentIdB: string;
+  conclusionRelation: PairwiseRelation;  // 'INCONSISTENT' | 'EQUIVALENT' | 'ENTAILS_LEFT' | 'ENTAILS_RIGHT' | 'CONSISTENT'
+}
+```
+
+### Printing a report
+
+```ts
+map.printReport();
+```
+
+```text
+DIALECTICAL MAP REPORT
+══════════════════════════════════════════════════
+
+Central Claim [Central Claim]
+  "Capital punishment is justified"
+  confidence: 1.00
+
+Arguments (3):
+
+  [deterrence] The Deterrence Argument  (supports → claim)
+  Premises:
+    • "Capital punishment deters violent crime"  (confidence: 0.80)
+    • "Deterring crime saves innocent lives"  (confidence: 0.90)
+  Sub-conclusion: "Capital punishment saves innocent lives"
+  Validity: consistent     Claim relation: consistent       Strength: 0.425
+
+  [irreversibility] The Irreversibility Objection  (attacks → claim)
+  Premises:
+    • "Wrongful executions cannot be undone"  (confidence: 0.95)
+    • "The justice system makes errors"  (confidence: 0.90)
+  Sub-conclusion: "Capital punishment risks irreversible injustice"
+  Validity: consistent     Claim relation: consistent       Strength: 0.463
+
+  [rebuttal] Rebuttal to Deterrence  (undermines → premise[0] of deterrence)
+  Premises:
+    • "Empirical studies show no deterrent effect"  (confidence: 0.75)
+  Sub-conclusion: "The deterrence premise is false"
+  Validity: consistent     Claim relation: consistent       Strength: 0.375
+
+Pairwise tensions (sub-conclusions):
+  The Deterrence Argument  ↔  The Irreversibility Objection   consistent
+  The Deterrence Argument  ↔  Rebuttal to Deterrence   consistent
+  The Irreversibility Objection  ↔  Rebuttal to Deterrence   consistent
+```
+
 ## Evaluation Engine
 
 `PropositionalEvaluationEngine` provides truth-table generation and semantic classification.
