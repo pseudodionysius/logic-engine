@@ -78,13 +78,24 @@ src/
       index.ts
   engine/
     nlp/
-      nlpTypes.ts                                    # NLPResult (imports AlethicAssertoric from shared)
-      nlpEngine.ts                                   # NLPEngine stub
+      nlpTypes.ts                                    # NLPResult, AnnotatedSentence, SentenceFeatures, FormalTranslationSet, …
+      nlpEngine.ts                                   # NLPEngine — top-level pipeline orchestrator
+      textSegmenter.ts                               # TextSegmenter — sentence boundary detection + AsyncIterable support
+      sentenceClassifier.ts                          # SentenceClassifier — mood detection + confidence scoring
+      argumentAnalyser.ts                            # ArgumentAnalyser — premise/conclusion detection, pairwise relations
+      formalAnnotator.ts                             # FormalAnnotator — feature extraction + syntax tree attachment
+      formalTranslator.ts                            # FormalTranslator — formula string generation for all three languages
       index.ts
     syntax/
-      propositional/syntaxEngine.ts                  # TODO
+      syntaxTypes.ts                                 # SyntaxTree DTOs — TaggedToken, TerminalNode, PhraseNode, SyntaxTree
+      naturalLanguageSyntaxParser.ts                 # NaturalLanguageSyntaxParser — constituency parse tree builder
+      syntaxTreePrinter.ts                           # SyntaxTreePrinter — box-drawing, token list, bracketed notation
+      index.ts
+      propositional/
+        syntaxEngine.ts                              # PropositionalSyntaxEngine — formula string → WFF (recursive descent)
     semantics/
-      propositional/evaluationEngine.ts              # TODO
+      propositional/
+        evaluationEngine.ts                          # PropositionalEvaluationEngine — truth tables, classification
 
 test/
   language/
@@ -114,9 +125,18 @@ test/
       meta-logic/
         completeness.spec.ts                         # K axiom, modal duality, distribution, non-theorems
   engine/
-    nlp/nlpEngine.spec.ts                            # Skipped placeholder
-    syntax/propositional/syntaxEngine.spec.ts        # Skipped placeholder
-    semantics/propositional/evaluationEngine.spec.ts # Skipped placeholder
+    nlp/
+      nlpEngine.spec.ts
+      textSegmenter.spec.ts
+      sentenceClassifier.spec.ts
+      argumentAnalyser.spec.ts
+      formalAnnotator.spec.ts
+      formalTranslator.spec.ts
+    syntax/
+      naturalLanguageSyntaxParser.spec.ts
+      syntaxTreePrinter.spec.ts
+      propositional/syntaxEngine.spec.ts
+    semantics/propositional/evaluationEngine.spec.ts
 ```
 
 ### TypeScript Config Split
@@ -291,19 +311,125 @@ Five concrete `ModalSystemSpec` objects are provided:
 
 `docs/modal/design.md` covers Kripke semantics, system hierarchy, and the analogy table between quantificational and modal constructs (domain ↔ worlds, ∀/∃ ↔ □/◇, etc.).
 
-## NLP Engine — Design Intent
+## NLP Engine — What's Implemented
 
-`NLPEngine.parse(input: string): NLPResult` accepts any string and returns zero or more `AlethicAssertoric` candidates. The output `SentenceSet` feeds directly into `PropositionalTheoryBuilder.fromSentenceSet()`.
+The pipeline is fully implemented in `src/engine/nlp/`. All processing is rule-based and zero-dependency.
+
+### Pipeline stages
+
+**`TextSegmenter`** — splits raw text into sentence strings.
+
+- Paragraph breaks (double newlines) always act as boundaries.
+- Dot-based boundaries require whitespace + uppercase following and respect common abbreviations (`Mr.`, `Dr.`, etc.) and decimal numbers.
+- `segment(text: string): string[]` — eager, for string input.
+- `segmentStream(source: AsyncIterable<string>): Promise<string[]>` — lazy, buffers chunks then segments.
+
+**`SentenceClassifier`** — filters to alethic assertoric sentences and scores confidence.
+
+- `classify(sentence): AlethicAssertoric | null` — returns `null` for interrogative, imperative, and exclamatory moods.
+- Confidence scoring: base 0.5 ± rule adjustments (copula, epistemic markers, hedging language, sentence length, subject-verb pattern). Clamped to [0.05, 1.0].
+- `classifyAll(sentences): AlethicAssertoric[]` — batch variant, drops non-assertoric.
+
+**`FormalAnnotator`** — extracts logical features and attaches a constituency syntax tree.
+
+- Trigger tables for connectives, quantifiers, modal adverbs, and negations (span-based, non-overlapping).
+- Proposition extraction: inverts the occupied spans to find free text fragments.
+- `annotate(sentence): AnnotatedSentence` — populates `features` and `syntaxTree`.
+- `annotateAll(sentences): AnnotatedSentence[]` — batch variant.
+
+**`ArgumentAnalyser`** — detects argument structure.
+
+- Conclusion markers: `therefore`, `thus`, `hence`, `consequently`, etc.
+- Premise markers: `because`, `since`, `given that`, etc.
+- When no explicit conclusion is found, the last sentence is promoted.
+- Pairwise relations: `supports`, `opposes` (negation asymmetry + content-word overlap), or `independent`.
+- `analyse(sentences): AnalysedArgument`
+
+**`FormalTranslator`** — generates formula strings for all three formal languages.
+
+- **Propositional**: interleaves proposition labels with connective operators → `"p -> q"`.
+- **Quantificational**: prefixes with detected quantifier → `"∀x. p -> q"`.
+- **Modal**: wraps with modal operator → `"□(p -> q)"`.
+- `translate(source, annotated): FormalTranslationSet`
+
+**`NLPEngine`** — top-level orchestrator.
+
+- `parse(input: string): NLPResult` — runs the full pipeline over a string.
+- `parseStream(source: AsyncIterable<string>): Promise<NLPResult>` — async variant for file/stream input.
+
+### `NLPResult` shape
+
+```ts
+interface NLPResult {
+  input: string;
+  candidates: AlethicAssertoric[];
+  sentenceSet: SentenceSet;
+  annotated: AnnotatedSentence[];   // includes syntaxTree per sentence
+  argument: AnalysedArgument;
+  translations: FormalTranslationSet;
+}
+```
+
+## Syntax Engine — What's Implemented
+
+### Constituency parse trees (`src/engine/syntax/`)
+
+**`syntaxTypes.ts`** — serialization-ready DTOs designed for future protobuf/JSON/CBOR support:
+
+| Type | Role |
+| --- | --- |
+| `PhraseLabel` | Constituent categories: `S`, `NP`, `VP`, `PP`, `AP`, `AdvP`, `CP`, `QP` |
+| `POSTag` | POS tags: `DET`, `QUANT`, `N`, `PN`, `PRON`, `V`, `COP`, `AUX`, `MODAL`, `ADJ`, `ADV`, `PREP`, `CONJ`, `COMP`, `NEG`, `PART`, `PUNCT`, `UNKNOWN` |
+| `TaggedToken` | `{ text, pos, index }` — the pre-terminal layer |
+| `TerminalNode` | Leaf: `{ kind: 'terminal', pos, text, index }` |
+| `PhraseNode` | Internal: `{ kind: 'phrase', label, children, startIndex, endIndex }` |
+| `SyntaxNode` | Discriminated union: `TerminalNode \| PhraseNode` |
+| `SyntaxTree` | Root DTO: `{ schemaVersion, source, tokens, root }` |
+
+The `kind` discriminator maps directly to a protobuf `oneof`. `PhraseLabel` and `POSTag` map to protobuf enums. Arrays (not Maps) are used throughout. `schemaVersion = '1'` enables forward-compatible evolution.
+
+**`NaturalLanguageSyntaxParser`** — rule-based constituency parser.
+
+- POS tagging via lexicon lookup with morphological heuristics (`-ly` → ADV, `-tion` → N, `-ous/-al/-ful/-ive/-able` → ADJ, `-ing` → V, etc.).
+- Handles: simple declarative NP+VP, quantified NP (`QUANT N`), modal adverb opening (`AdvP`), conditional sentences (`if/then` → CP), copular constructions with PP, negation inside VP.
+- `parse(sentence: string): SyntaxTree`
+
+**`SyntaxTreePrinter`** — three rendering modes:
+
+| Method | Output |
+| --- | --- |
+| `render(tree, header?)` | Box-drawing tree (`└─`, `├─`, `│`) |
+| `renderTokens(tree)` | Flat indexed list: `[0] QUANT "All"` |
+| `renderBracketed(tree)` | Inline bracketed notation: `[S [NP ...][VP ...]]` |
+| `print/printTokens/printBracketed` | Console variants of each |
+
+### Propositional formula parser (`src/engine/syntax/propositional/syntaxEngine.ts`)
+
+**`PropositionalSyntaxEngine`** — recursive-descent parser for formula strings.
+
+- Operator precedence (lowest → highest): `<->` < `->` < `|` < `&` < `~` < atoms/parentheses.
+- `<->` and `->` are right-associative; `|` and `&` are left-associative.
+- Double negation (`~~p`) is eliminated during parse by toggling `unaryOperator`.
+- `parse(input: string): PropositionalParseResult` — returns `{ formula: WFF, variables: Map<string, PropositionalVariable> }`.
+- `parseInto(input, variables)` — parses into a shared variable registry (used by `fromSentenceSet`).
+
+**`PropositionalTheoryBuilder.fromSentenceSet(set: SentenceSet): PropositionalTheory`** — now implemented. Runs `FormalAnnotator` → `FormalTranslator` → `PropositionalSyntaxEngine` per sentence, sharing a single variable registry across all formulas.
+
+## Semantics Engine — What's Implemented
+
+**`PropositionalEvaluationEngine`** (`src/engine/semantics/propositional/evaluationEngine.ts`):
+
+- `evaluate(formula, variables): EvaluationResult` — exhaustive 2^n enumeration.
+- `evaluateString(formulaString): EvaluationResult` — parse + evaluate in one step.
+- `classify(formulaString): WFFClassification` — `'tautology'` | `'contradiction'` | `'contingency'`.
+- `truthTable(formulaString): TruthTable` — `{ variables, rows: { assignment, value }[] }`.
+- `printTruthTable(formulaString): void` — formatted console output with box-drawing separator.
 
 ## What Is Not Yet Implemented
 
-- `NLPEngine` — sentence segmentation, mood classification, confidence scoring
-- `PropositionalSyntaxEngine` — parsing formula strings into WFF instances
-- `PropositionalEvaluationEngine` — truth tables, tautology/contradiction classification
-- `PropositionalTheoryBuilder.fromSentenceSet()` — awaits SyntaxEngine
 - Quantificational function symbols (e.g., `f(x)`)
 - `QuantificationalSyntaxEngine` — parsing formula strings into QFF instances
-- `QuantificationalTheoryBuilder.fromSentenceSet()` — awaits SyntaxEngine
+- `QuantificationalTheoryBuilder.fromSentenceSet()` — awaits QuantificationalSyntaxEngine
 - `ModalSyntaxEngine` — parsing formula strings into MFF instances
 - `ModalTheoryBuilder.fromSentenceSet()` — awaits ModalSyntaxEngine
 - Quantified modal logic (combining QFF quantifiers with modal operators)

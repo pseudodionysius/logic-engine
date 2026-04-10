@@ -1,4 +1,5 @@
 import { AlethicAssertoric, SentenceSet } from '../../language/shared/types';
+import { SyntaxTree } from '../syntax/syntaxTypes';
 
 export { AlethicAssertoric };
 
@@ -80,6 +81,8 @@ export interface SentenceFeatures {
 export interface AnnotatedSentence {
   source: AlethicAssertoric;
   features: SentenceFeatures;
+  /** Constituency syntax tree for this sentence. */
+  syntaxTree: SyntaxTree;
 }
 
 // ---------------------------------------------------------------------------

@@ -523,21 +523,169 @@ Shared propositions:
 
 ## NLP Engine
 
-> In Progress
+`NLPEngine.parse(input)` accepts any string and returns an `NLPResult`. All processing is rule-based — no external ML dependencies.
 
-`NLPEngine.parse(input)` accepts any string and returns an `NLPResult` containing zero or more `AlethicAssertoric` candidates — declarative sentences that make a truth claim. The candidates can be passed as a `SentenceSet` to `PropositionalTheoryBuilder.fromSentenceSet()` once the syntax engine is implemented.
+```ts
+import { NLPEngine } from 'logic-engine';
+
+const engine = new NLPEngine();
+const result = engine.parse(
+  'All men are mortal. Socrates is a man. Therefore Socrates is mortal.',
+);
+
+// result.candidates   — AlethicAssertoric[] (assertoric sentences only)
+// result.sentenceSet  — SentenceSet ready for PropositionalTheoryBuilder.fromSentenceSet()
+// result.annotated    — features + constituency syntax tree per sentence
+// result.argument     — { premises, conclusions, relations }
+// result.translations — propositional / quantificational / modal formula strings
+```
+
+**Stream support** — pass any `AsyncIterable<string>` for file or network input:
+
+```ts
+const result = await engine.parseStream(fs.createReadStream('argument.txt', 'utf-8'));
+```
+
+### Pipeline stages
+
+| Stage | Class | Responsibility |
+| --- | --- | --- |
+| 1 | `TextSegmenter` | Sentence boundary detection — respects abbreviations and decimals |
+| 2 | `SentenceClassifier` | Mood detection; confidence scoring (0.05–1.0) |
+| 3 | `FormalAnnotator` | Extracts connectives, quantifiers, modals, negations, propositions; builds syntax tree |
+| 4 | `ArgumentAnalyser` | Identifies premises and conclusions; computes pairwise relations |
+| 5 | `FormalTranslator` | Generates formula strings for propositional, quantificational, and modal languages |
+
+### `AnnotatedSentence`
+
+Each sentence in `result.annotated` carries:
+
+```ts
+interface AnnotatedSentence {
+  source: AlethicAssertoric;
+  features: SentenceFeatures;   // connectives, quantifiers, modalAdverbs, negations, propositions, mood
+  syntaxTree: SyntaxTree;       // constituency parse tree
+}
+```
+
+### Formal translations
+
+`result.translations` contains formula strings for all three languages:
+
+```ts
+// e.g. for "If it rains then the streets are wet"
+propositional:     { formulaString: 'p -> q', propositionMap: { p: 'it rains', q: 'the streets are wet' } }
+quantificational:  { formulaString: '∀x. p -> q', quantifierPrefix: null, suggestedPredicate: null }
+modal:             { formulaString: 'p -> q', modalPrefix: null }
+```
 
 ## Syntax Engine
 
-> In Progress
+### Constituency syntax trees
 
-`PropositionalSyntaxEngine` will parse formula strings and JSON into typed `WFF` instances, enabling `PropositionalTheoryBuilder.fromSentenceSet()` to accept NLP engine output directly.
+`NaturalLanguageSyntaxParser` builds a constituency parse tree for any sentence. Trees are serialization-ready DTOs — no methods, plain data, compatible with JSON/protobuf/CBOR.
+
+```ts
+import { NaturalLanguageSyntaxParser, SyntaxTreePrinter } from 'logic-engine';
+
+const parser  = new NaturalLanguageSyntaxParser();
+const printer = new SyntaxTreePrinter();
+
+const tree = parser.parse('All men are mortal.');
+
+printer.print(tree);          // box-drawing tree
+printer.printTokens(tree);    // flat POS-tagged token list
+printer.printBracketed(tree); // [S [NP [QUANT All][N men]][VP [COP are][AP [ADJ mortal]]]]
+```
+
+Box-drawing output example:
+
+```text
+Syntax Tree — "All men are mortal."
+══════════════════════════════════════
+S
+├── NP
+│   ├── QUANT  "All"
+│   └── N      "men"
+└── VP
+    ├── COP    "are"
+    └── AP
+        └── ADJ    "mortal"
+```
+
+**`SyntaxTree` DTO** — self-contained and schema-versioned:
+
+```ts
+interface SyntaxTree {
+  schemaVersion: string;   // '1' — bump on breaking shape changes
+  source: string;          // original sentence
+  tokens: TaggedToken[];   // POS-tagged token sequence
+  root: PhraseNode;        // root S node
+}
+```
+
+Node types use a `kind` discriminator (`'terminal'` | `'phrase'`) that maps directly to a protobuf `oneof`. Phrase labels (`S`, `NP`, `VP`, `PP`, `AP`, `AdvP`, `CP`, `QP`) and POS tags map to protobuf enums.
+
+### Propositional formula parser
+
+`PropositionalSyntaxEngine` parses formula strings into typed `WFF` instances.
+
+```ts
+import { PropositionalSyntaxEngine } from 'logic-engine';
+
+const engine = new PropositionalSyntaxEngine();
+
+const { formula, variables } = engine.parse('p -> (q | ~p)');
+// formula   — a WFF ready for value() evaluation
+// variables — Map<string, PropositionalVariable>
+
+variables.get('p')!.assign(true);
+variables.get('q')!.assign(false);
+formula.value(); // → true
+```
+
+Operator precedence (lowest → highest): `<->` < `->` < `|` < `&` < `~`. Double negation (`~~p`) is eliminated during parse. Parentheses override precedence as expected.
+
+**`PropositionalTheoryBuilder.fromSentenceSet()`** uses the syntax engine internally — pass `NLPEngine` output directly into a propositional theory:
+
+```ts
+const nlp    = new NLPEngine();
+const result = nlp.parse('It is raining. If it rains the ground is wet. The ground is wet.');
+
+const theory = new PropositionalTheoryBuilder().fromSentenceSet(result.sentenceSet);
+theory.printProof();
+```
 
 ## Evaluation Engine
 
-> In Progress
+`PropositionalEvaluationEngine` provides truth-table generation and semantic classification.
 
-`PropositionalEvaluationEngine` will provide truth table generation, tautology / contradiction / contingency classification, and proof support beyond the truth-table consistency check already available in `PropositionalTheory`.
+```ts
+import { PropositionalEvaluationEngine } from 'logic-engine';
+
+const engine = new PropositionalEvaluationEngine();
+
+engine.classify('p | ~p');           // → 'tautology'
+engine.classify('p & ~p');           // → 'contradiction'
+engine.classify('p -> q');           // → 'contingency'
+
+engine.printTruthTable('p -> q');
+```
+
+```text
+TRUTH TABLE — p -> q
+═════════════════════════
+p    │ q    │ VALUE
+─────────────────────────
+F    │ F    │ T
+F    │ T    │ T
+T    │ F    │ F
+T    │ T    │ T
+```
+
+**Classification:** `'tautology'` (true under all assignments), `'contradiction'` (false under all), or `'contingency'` (both).
+
+**`evaluate(formula, variables)`** — works directly with WFF instances when you need the full `EvaluationResult` including the `TruthTable` data structure.
 
 ## License
 
