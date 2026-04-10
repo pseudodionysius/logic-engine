@@ -1,6 +1,6 @@
 import { MFF, World, ModalEvaluationState, ModalSystemSpec } from './modalTypes';
 import { ModalVariable } from './modalVariable';
-import { FormalSentence, Theory, ConsistencyResult, ProofNode } from '../shared/theory';
+import { FormalSentence, Theory, ConsistencyResult, ProofNode, PairwiseRelation, PairwiseSentenceRelation } from '../shared/theory';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -320,11 +320,26 @@ export class ModalTheory implements Theory<MFF, boolean> {
   /**
    * Compute the pairwise logical relation between two sentences.
    */
+  pairwiseRelations(): PairwiseSentenceRelation<MFF>[] {
+    const propNames = Array.from(this.variables.keys());
+    const results: PairwiseSentenceRelation<MFF>[] = [];
+    for (let i = 0; i < this.sentences.length; i++) {
+      for (let j = i + 1; j < this.sentences.length; j++) {
+        results.push({
+          a: this.sentences[i],
+          b: this.sentences[j],
+          relation: this._pairwiseRelation(this.sentences[i], this.sentences[j], propNames),
+        });
+      }
+    }
+    return results;
+  }
+
   private _pairwiseRelation(
     s1: ModalFormalSentence,
     s2: ModalFormalSentence,
     propNames: string[],
-  ): string {
+  ): PairwiseRelation {
     let bothTrue        = false;
     let s1TrueS2False   = false;
     let s1FalseS2True   = false;
