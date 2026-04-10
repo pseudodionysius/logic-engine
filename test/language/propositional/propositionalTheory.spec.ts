@@ -62,9 +62,24 @@ describe('PropositionalTheoryBuilder', () => {
     expect(theory.sentences[0].label).toBe('P1');
   });
 
-  test('fromSentenceSet() throws (not yet implemented)', () => {
+  test('fromSentenceSet() builds a theory from a SentenceSet', () => {
     const builder = new PropositionalTheoryBuilder();
-    expect(() => builder.fromSentenceSet({ sentences: [] })).toThrow();
+    const set = {
+      sentences: [
+        { raw: 'If it is raining then the streets are wet.', confidence: 1.0 },
+        { raw: 'It is raining.', confidence: 1.0 },
+      ],
+    };
+    const theory = builder.fromSentenceSet(set);
+    expect(theory.sentences).toHaveLength(2);
+    expect(theory.sentences[0].label).toBe('φ1');
+    expect(theory.sentences[1].label).toBe('φ2');
+  });
+
+  test('fromSentenceSet() returns an empty theory for an empty SentenceSet', () => {
+    const builder = new PropositionalTheoryBuilder();
+    const theory = builder.fromSentenceSet({ sentences: [] });
+    expect(theory.sentences).toHaveLength(0);
   });
 });
 
